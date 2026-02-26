@@ -12,7 +12,7 @@ import { Select } from '@/components/ui/Select'
 import { FileUpload } from '@/components/ui/FileUpload'
 import { Skeleton } from '@/components/ui/LoadingSkeleton'
 import { createClient } from '@/lib/supabase'
-import { ArrowLeft, Pencil, Save, X, Plus, Trash2, Clock } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Plus, Trash2, Clock, Building2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -101,7 +101,13 @@ export default function FuncionarioDetailPage() {
 
   // Lookup data
   const [unidades, setUnidades] = useState<{ id: string; titulo: string }[]>([])
-  const [setores, setSetores] = useState<{ id: string; titulo: string; unidade_id?: string }[]>([])
+  const [setores, setSetores] = useState<{
+    id: string; titulo: string; unidade_id?: string;
+    horario_seg_qui_entrada?: string; horario_seg_qui_saida?: string;
+    horario_seg_qui_almoco_inicio?: string; horario_seg_qui_almoco_fim?: string;
+    horario_sex_entrada?: string; horario_sex_saida?: string;
+    horario_sex_almoco_inicio?: string; horario_sex_almoco_fim?: string;
+  }[]>([])
   const [funcoes, setFuncoes] = useState<{ id: string; titulo: string; setor_id?: string; cbo?: string }[]>([])
 
   const { register, handleSubmit, watch, reset, control, setValue, formState: { errors, isSubmitting } } = useForm<FuncionarioFormData>({
@@ -137,7 +143,7 @@ export default function FuncionarioDetailPage() {
       const [funcRes, uniRes, setRes, funRes] = await Promise.all([
         supabase.from('funcionarios').select('*').eq('id', id).single(),
         supabase.from('unidades').select('id, titulo').order('titulo'),
-        supabase.from('setores').select('id, titulo, unidade_id').order('titulo'),
+        supabase.from('setores').select('id, titulo, unidade_id, horario_seg_qui_entrada, horario_seg_qui_saida, horario_seg_qui_almoco_inicio, horario_seg_qui_almoco_fim, horario_sex_entrada, horario_sex_saida, horario_sex_almoco_inicio, horario_sex_almoco_fim').order('titulo'),
         supabase.from('funcoes').select('id, titulo, setor_id, cbo').order('titulo'),
       ])
 
@@ -342,6 +348,70 @@ export default function FuncionarioDetailPage() {
     const fId = watch('funcao_id') || (funcionario?.funcao_id as string)
     const funcao = funcoes.find((f) => f.id === fId)
     return funcao?.cbo || '-'
+  }
+
+  function getWeeklyHours(): number | null {
+    const sqe = watch('seg_qui_entrada')
+    const sqs = watch('seg_qui_saida')
+    const sqai = watch('seg_qui_almoco_inicio')
+    const sqaf = watch('seg_qui_almoco_fim')
+    const sxe = watch('sexta_entrada')
+    const sxs = watch('sexta_saida')
+    const sxai = watch('sexta_almoco_inicio')
+    const sxaf = watch('sexta_almoco_fim')
+
+    function timeToMinutes(t?: string): number | null {
+      if (!t) return null
+      const parts = t.split(':')
+      if (parts.length < 2) return null
+      return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10)
+    }
+
+    let total = 0
+    let hasAny = false
+
+    const me = timeToMinutes(sqe), ms = timeToMinutes(sqs)
+    const mai = timeToMinutes(sqai), maf = timeToMinutes(sqaf)
+    if (me != null && ms != null) {
+      hasAny = true
+      let daily = ms - me
+      if (mai != null && maf != null) daily -= (maf - mai)
+      total += daily * 4
+    }
+
+    const fe = timeToMinutes(sxe), fs = timeToMinutes(sxs)
+    const fai = timeToMinutes(sxai), faf = timeToMinutes(sxaf)
+    if (fe != null && fs != null) {
+      hasAny = true
+      let daily = fs - fe
+      if (fai != null && faf != null) daily -= (faf - fai)
+      total += daily
+    }
+
+    if (!hasAny) return null
+    return Math.round((total / 60) * 10) / 10
+  }
+
+  function getSetorExpediente() {
+    const sId = watch('setor_id')
+    if (!sId) return null
+    const setor = setores.find((s) => s.id === sId)
+    if (!setor) return null
+    if (!setor.horario_seg_qui_entrada && !setor.horario_sex_entrada) return null
+    return setor
+  }
+
+  function applySetorSchedule() {
+    const setor = getSetorExpediente()
+    if (!setor) return
+    setValue('seg_qui_entrada', setor.horario_seg_qui_entrada || '')
+    setValue('seg_qui_almoco_inicio', setor.horario_seg_qui_almoco_inicio || '')
+    setValue('seg_qui_almoco_fim', setor.horario_seg_qui_almoco_fim || '')
+    setValue('seg_qui_saida', setor.horario_seg_qui_saida || '')
+    setValue('sexta_entrada', setor.horario_sex_entrada || '')
+    setValue('sexta_almoco_inicio', setor.horario_sex_almoco_inicio || '')
+    setValue('sexta_almoco_fim', setor.horario_sex_almoco_fim || '')
+    setValue('sexta_saida', setor.horario_sex_saida || '')
   }
 
   if (loading) {
@@ -569,7 +639,27 @@ export default function FuncionarioDetailPage() {
 
             {/* Horario de Expediente */}
             <Card>
-              <h3 className="text-lg font-bold text-cinza-preto mb-4">Horario de Expediente</h3>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-lg font-bold text-cinza-preto">Horario de Expediente</h3>
+                  {(() => {
+                    const wh = getWeeklyHours()
+                    if (wh == null) return null
+                    return (
+                      <Badge variant="info">
+                        <Clock size={12} className="mr-1" />
+                        {wh.toString().replace('.', ',')}h Semanais
+                      </Badge>
+                    )
+                  })()}
+                </div>
+                {editing && getSetorExpediente() && (
+                  <Button type="button" variant="ghost" size="sm" onClick={applySetorSchedule}>
+                    <Building2 size={14} />
+                    Horario Padrao do Setor
+                  </Button>
+                )}
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                   <h4 className="text-sm font-semibold text-cinza-estrutural mb-3">Segunda a Quinta</h4>

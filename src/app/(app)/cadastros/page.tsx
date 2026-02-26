@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { Button } from '@/components/ui/Button'
@@ -13,7 +13,8 @@ import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from '@
 import { EmptyState } from '@/components/ui/EmptyState'
 import { TableSkeleton } from '@/components/ui/LoadingSkeleton'
 import { createClient } from '@/lib/supabase'
-import { Plus, Pencil, Trash2, MapPin, Layers, Briefcase } from 'lucide-react'
+import { SearchInput } from '@/components/ui/SearchInput'
+import { Plus, Pencil, Trash2, MapPin, Layers, Briefcase, Clock, Filter } from 'lucide-react'
 import { toast } from 'sonner'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -39,6 +40,15 @@ const setorSchema = z.object({
   titulo: z.string().min(1, 'Titulo obrigatorio'),
   tipo: z.string().optional(),
   unidade_id: z.string().optional(),
+  // Expediente
+  horario_seg_qui_entrada: z.string().optional(),
+  horario_seg_qui_almoco_inicio: z.string().optional(),
+  horario_seg_qui_almoco_fim: z.string().optional(),
+  horario_seg_qui_saida: z.string().optional(),
+  horario_sex_entrada: z.string().optional(),
+  horario_sex_almoco_inicio: z.string().optional(),
+  horario_sex_almoco_fim: z.string().optional(),
+  horario_sex_saida: z.string().optional(),
 })
 
 const funcaoSchema = z.object({
@@ -68,6 +78,64 @@ function formatPhone(value: string): string {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
 }
 
+function calcWeeklyHours(data: {
+  seg_qui_entrada?: string; seg_qui_saida?: string;
+  seg_qui_almoco_inicio?: string; seg_qui_almoco_fim?: string;
+  sex_entrada?: string; sex_saida?: string;
+  sex_almoco_inicio?: string; sex_almoco_fim?: string;
+}): number | null {
+  function timeToMinutes(t?: string): number | null {
+    if (!t) return null
+    const parts = t.split(':')
+    if (parts.length < 2) return null
+    return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10)
+  }
+
+  const sqe = timeToMinutes(data.seg_qui_entrada)
+  const sqs = timeToMinutes(data.seg_qui_saida)
+  const sqai = timeToMinutes(data.seg_qui_almoco_inicio)
+  const sqaf = timeToMinutes(data.seg_qui_almoco_fim)
+  const sxe = timeToMinutes(data.sex_entrada)
+  const sxs = timeToMinutes(data.sex_saida)
+  const sxai = timeToMinutes(data.sex_almoco_inicio)
+  const sxaf = timeToMinutes(data.sex_almoco_fim)
+
+  let total = 0
+  let hasAny = false
+
+  if (sqe != null && sqs != null) {
+    hasAny = true
+    let daily = sqs - sqe
+    if (sqai != null && sqaf != null) daily -= (sqaf - sqai)
+    total += daily * 4
+  }
+
+  if (sxe != null && sxs != null) {
+    hasAny = true
+    let daily = sxs - sxe
+    if (sxai != null && sxaf != null) daily -= (sxaf - sxai)
+    total += daily
+  }
+
+  if (!hasAny) return null
+  return Math.round((total / 60) * 10) / 10
+}
+
+function formatWeeklyHours(data: Record<string, unknown>): string | null {
+  const hours = calcWeeklyHours({
+    seg_qui_entrada: data.horario_seg_qui_entrada as string,
+    seg_qui_saida: data.horario_seg_qui_saida as string,
+    seg_qui_almoco_inicio: data.horario_seg_qui_almoco_inicio as string,
+    seg_qui_almoco_fim: data.horario_seg_qui_almoco_fim as string,
+    sex_entrada: data.horario_sex_entrada as string,
+    sex_saida: data.horario_sex_saida as string,
+    sex_almoco_inicio: data.horario_sex_almoco_inicio as string,
+    sex_almoco_fim: data.horario_sex_almoco_fim as string,
+  })
+  if (hours == null) return null
+  return `${hours.toString().replace('.', ',')}h Semanais`
+}
+
 type Tab = 'unidades' | 'setores' | 'funcoes'
 
 export default function CadastrosPageWrapper() {
@@ -94,6 +162,11 @@ function CadastrosPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  // Filter states
+  const [setorFilterUnidade, setSetorFilterUnidade] = useState('')
+  const [setorFilterTipo, setSetorFilterTipo] = useState('')
+  const [funcaoFilterSetor, setFuncaoFilterSetor] = useState('')
+
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
@@ -116,7 +189,18 @@ function CadastrosPage() {
         const fallback = await supabase.from('setores').select('*, unidades(titulo)').order('titulo')
         setSetores(fallback.data || [])
       } else {
-        setSetores(setRes.data || [])
+        // Merge expediente data from base table into view data
+        const baseSetores = await supabase.from('setores').select('id, horario_seg_qui_entrada, horario_seg_qui_saida, horario_seg_qui_almoco_inicio, horario_seg_qui_almoco_fim, horario_sex_entrada, horario_sex_saida, horario_sex_almoco_inicio, horario_sex_almoco_fim')
+        if (!baseSetores.error && baseSetores.data) {
+          const expedienteMap = new Map(baseSetores.data.map((s: Record<string, unknown>) => [s.id, s]))
+          const merged = (setRes.data || []).map((s: Record<string, unknown>) => ({
+            ...s,
+            ...(expedienteMap.get(s.id as string) || {}),
+          }))
+          setSetores(merged)
+        } else {
+          setSetores(setRes.data || [])
+        }
       }
 
       if (funRes.error) {
@@ -141,6 +225,25 @@ function CadastrosPage() {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  const filteredSetores = useMemo(() => {
+    let result = setores
+    if (setorFilterUnidade) {
+      result = result.filter((s) => {
+        const uid = (s.unidade_id as string) || ''
+        return uid === setorFilterUnidade
+      })
+    }
+    if (setorFilterTipo) {
+      result = result.filter((s) => (s.tipo as string) === setorFilterTipo)
+    }
+    return result
+  }, [setores, setorFilterUnidade, setorFilterTipo])
+
+  const filteredFuncoes = useMemo(() => {
+    if (!funcaoFilterSetor) return funcoes
+    return funcoes.filter((f) => (f.setor_id as string) === funcaoFilterSetor)
+  }, [funcoes, funcaoFilterSetor])
 
   function setTab(t: Tab) {
     router.push(`/cadastros?tab=${t}`)
@@ -205,6 +308,64 @@ function CadastrosPage() {
           </Button>
         </div>
 
+        {/* Filters */}
+        {tab === 'setores' && (
+          <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-gray-100 bg-gray-50">
+            <Filter size={16} className="text-cinza-estrutural" />
+            <select
+              value={setorFilterUnidade}
+              onChange={(e) => setSetorFilterUnidade(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-cinza-preto bg-white focus:outline-none focus:ring-2 focus:ring-laranja"
+            >
+              <option value="">Todas as Unidades</option>
+              {unidades.map((u) => (
+                <option key={u.id as string} value={u.id as string}>{u.titulo as string}</option>
+              ))}
+            </select>
+            <select
+              value={setorFilterTipo}
+              onChange={(e) => setSetorFilterTipo(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-cinza-preto bg-white focus:outline-none focus:ring-2 focus:ring-laranja"
+            >
+              <option value="">Todos os Tipos</option>
+              <option value="Escritorio">Escritorio</option>
+              <option value="Producao">Producao</option>
+            </select>
+            {(setorFilterUnidade || setorFilterTipo) && (
+              <button
+                onClick={() => { setSetorFilterUnidade(''); setSetorFilterTipo('') }}
+                className="text-xs text-cinza-estrutural hover:text-cinza-preto underline"
+              >
+                Limpar filtros
+              </button>
+            )}
+          </div>
+        )}
+
+        {tab === 'funcoes' && (
+          <div className="flex flex-wrap items-center gap-3 px-6 py-3 border-b border-gray-100 bg-gray-50">
+            <Filter size={16} className="text-cinza-estrutural" />
+            <select
+              value={funcaoFilterSetor}
+              onChange={(e) => setFuncaoFilterSetor(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-cinza-preto bg-white focus:outline-none focus:ring-2 focus:ring-laranja"
+            >
+              <option value="">Todos os Setores</option>
+              {setores.map((s) => (
+                <option key={s.id as string} value={s.id as string}>{s.titulo as string}</option>
+              ))}
+            </select>
+            {funcaoFilterSetor && (
+              <button
+                onClick={() => setFuncaoFilterSetor('')}
+                className="text-xs text-cinza-estrutural hover:text-cinza-preto underline"
+              >
+                Limpar filtro
+              </button>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <TableSkeleton />
         ) : (
@@ -213,10 +374,10 @@ function CadastrosPage() {
               <UnidadesTable data={unidades} onEdit={openEdit} onDelete={(id) => handleDelete('unidades', id)} />
             )}
             {tab === 'setores' && (
-              <SetoresTable data={setores} onEdit={openEdit} onDelete={(id) => handleDelete('setores', id)} />
+              <SetoresTable data={filteredSetores} onEdit={openEdit} onDelete={(id) => handleDelete('setores', id)} />
             )}
             {tab === 'funcoes' && (
-              <FuncoesTable data={funcoes} allFuncoes={funcoes} onEdit={openEdit} onDelete={(id) => handleDelete('funcoes', id)} />
+              <FuncoesTable data={filteredFuncoes} allFuncoes={funcoes} onEdit={openEdit} onDelete={(id) => handleDelete('funcoes', id)} />
             )}
           </>
         )}
@@ -301,30 +462,44 @@ function SetoresTable({ data, onEdit, onDelete }: { data: Record<string, unknown
         <TableHead>Titulo</TableHead>
         <TableHead>Tipo</TableHead>
         <TableHead>Unidade</TableHead>
+        <TableHead>Expediente</TableHead>
         <TableHead>Funcionarios</TableHead>
         <TableHead className="w-24">Acoes</TableHead>
       </TableHeader>
       <TableBody>
-        {data.map((s) => (
-          <TableRow key={s.id as string}>
-            <TableCell className="font-medium">{s.titulo as string}</TableCell>
-            <TableCell>
-              {s.tipo ? (
-                <Badge variant={(s.tipo as string) === 'Producao' ? 'warning' : 'info'}>
-                  {s.tipo as string}
-                </Badge>
-              ) : '-'}
-            </TableCell>
-            <TableCell>{(s.unidade_titulo as string) || ((s.unidades as Record<string, string>)?.titulo) || '-'}</TableCell>
-            <TableCell>{(s.total_funcionarios as number) ?? (s.num_funcionarios as number) ?? '-'}</TableCell>
-            <TableCell>
-              <div className="flex gap-1">
-                <button onClick={() => onEdit(s.id as string)} className="p-1.5 text-azul-medio hover:bg-blue-50 rounded"><Pencil size={16} /></button>
-                <button onClick={() => onDelete(s.id as string)} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
-              </div>
-            </TableCell>
-          </TableRow>
-        ))}
+        {data.map((s) => {
+          const weeklyHours = formatWeeklyHours(s)
+          return (
+            <TableRow key={s.id as string}>
+              <TableCell className="font-medium">{s.titulo as string}</TableCell>
+              <TableCell>
+                {s.tipo ? (
+                  <Badge variant={(s.tipo as string) === 'Producao' ? 'warning' : 'info'}>
+                    {s.tipo as string}
+                  </Badge>
+                ) : '-'}
+              </TableCell>
+              <TableCell>{(s.unidade_titulo as string) || ((s.unidades as Record<string, string>)?.titulo) || '-'}</TableCell>
+              <TableCell>
+                {weeklyHours ? (
+                  <span className="flex items-center gap-1 text-sm text-cinza-preto">
+                    <Clock size={14} className="text-laranja" />
+                    {weeklyHours}
+                  </span>
+                ) : (
+                  <span className="text-cinza-estrutural text-sm">-</span>
+                )}
+              </TableCell>
+              <TableCell>{(s.total_funcionarios as number) ?? (s.num_funcionarios as number) ?? '-'}</TableCell>
+              <TableCell>
+                <div className="flex gap-1">
+                  <button onClick={() => onEdit(s.id as string)} className="p-1.5 text-azul-medio hover:bg-blue-50 rounded"><Pencil size={16} /></button>
+                  <button onClick={() => onDelete(s.id as string)} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
+                </div>
+              </TableCell>
+            </TableRow>
+          )
+        })}
       </TableBody>
     </Table>
   )
@@ -476,52 +651,104 @@ function SetorModal({
   supabase: ReturnType<typeof createClient>; onSaved: () => void
   unidades: Record<string, unknown>[]; setores: Record<string, unknown>[]
 }) {
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<SetorForm>({
+  const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<SetorForm>({
     resolver: zodResolver(setorSchema),
+  })
+
+  const watchedFields = watch()
+  const weeklyHours = calcWeeklyHours({
+    seg_qui_entrada: watchedFields.horario_seg_qui_entrada,
+    seg_qui_saida: watchedFields.horario_seg_qui_saida,
+    seg_qui_almoco_inicio: watchedFields.horario_seg_qui_almoco_inicio,
+    seg_qui_almoco_fim: watchedFields.horario_seg_qui_almoco_fim,
+    sex_entrada: watchedFields.horario_sex_entrada,
+    sex_saida: watchedFields.horario_sex_saida,
+    sex_almoco_inicio: watchedFields.horario_sex_almoco_inicio,
+    sex_almoco_fim: watchedFields.horario_sex_almoco_fim,
   })
 
   useEffect(() => {
     if (open) {
       if (editingId) {
-        // Fetch full record from setores table (view may not have all fields)
         supabase.from('setores').select('*').eq('id', editingId).single().then(({ data }) => {
           if (data) {
             reset({
               titulo: (data.titulo as string) || '',
               tipo: (data.tipo as string) || '',
               unidade_id: (data.unidade_id as string) || '',
+              horario_seg_qui_entrada: (data.horario_seg_qui_entrada as string) || '',
+              horario_seg_qui_almoco_inicio: (data.horario_seg_qui_almoco_inicio as string) || '',
+              horario_seg_qui_almoco_fim: (data.horario_seg_qui_almoco_fim as string) || '',
+              horario_seg_qui_saida: (data.horario_seg_qui_saida as string) || '',
+              horario_sex_entrada: (data.horario_sex_entrada as string) || '',
+              horario_sex_almoco_inicio: (data.horario_sex_almoco_inicio as string) || '',
+              horario_sex_almoco_fim: (data.horario_sex_almoco_fim as string) || '',
+              horario_sex_saida: (data.horario_sex_saida as string) || '',
             })
           }
         })
       } else {
-        reset({ titulo: '', tipo: '', unidade_id: '' })
+        reset({
+          titulo: '', tipo: '', unidade_id: '',
+          horario_seg_qui_entrada: '', horario_seg_qui_almoco_inicio: '',
+          horario_seg_qui_almoco_fim: '', horario_seg_qui_saida: '',
+          horario_sex_entrada: '', horario_sex_almoco_inicio: '',
+          horario_sex_almoco_fim: '', horario_sex_saida: '',
+        })
       }
     }
   }, [open, editingId, supabase, reset])
 
   async function onSubmit(data: SetorForm) {
-    // Build payload, only include tipo if a valid value was selected
     const payload: Record<string, unknown> = {
       titulo: data.titulo,
       unidade_id: data.unidade_id || null,
+      horario_seg_qui_entrada: data.horario_seg_qui_entrada || null,
+      horario_seg_qui_almoco_inicio: data.horario_seg_qui_almoco_inicio || null,
+      horario_seg_qui_almoco_fim: data.horario_seg_qui_almoco_fim || null,
+      horario_seg_qui_saida: data.horario_seg_qui_saida || null,
+      horario_sex_entrada: data.horario_sex_entrada || null,
+      horario_sex_almoco_inicio: data.horario_sex_almoco_inicio || null,
+      horario_sex_almoco_fim: data.horario_sex_almoco_fim || null,
+      horario_sex_saida: data.horario_sex_saida || null,
     }
     if (data.tipo && data.tipo.trim() !== '') {
       payload.tipo = data.tipo
     } else {
       payload.tipo = null
     }
+
     if (editingId) {
       const { error } = await supabase.from('setores').update(payload).eq('id', editingId)
-      if (error) { toast.error('Erro: ' + error.message); return }
-      toast.success('Setor atualizado')
+      if (error) {
+        // If horario columns don't exist yet, try without them
+        if (error.message.includes('horario_')) {
+          const fallbackPayload: Record<string, unknown> = {
+            titulo: data.titulo,
+            unidade_id: data.unidade_id || null,
+            tipo: payload.tipo,
+          }
+          const { error: retryError } = await supabase.from('setores').update(fallbackPayload).eq('id', editingId)
+          if (retryError) { toast.error('Erro: ' + retryError.message); return }
+          toast.success('Setor atualizado (execute o SQL para habilitar expediente)')
+        } else {
+          toast.error('Erro: ' + error.message); return
+        }
+      } else {
+        toast.success('Setor atualizado')
+      }
     } else {
-      // If tipo is null and constraint requires it, try without it
       const { error } = await supabase.from('setores').insert(payload)
       if (error) {
-        // If check constraint fails, try without tipo field
-        if (error.message.includes('setores_tipo_check')) {
-          delete payload.tipo
-          const { error: retryError } = await supabase.from('setores').insert(payload)
+        if (error.message.includes('setores_tipo_check') || error.message.includes('horario_')) {
+          const fallbackPayload: Record<string, unknown> = {
+            titulo: data.titulo,
+            unidade_id: data.unidade_id || null,
+          }
+          if (!error.message.includes('setores_tipo_check') && payload.tipo) {
+            fallbackPayload.tipo = payload.tipo
+          }
+          const { error: retryError } = await supabase.from('setores').insert(fallbackPayload)
           if (retryError) { toast.error('Erro: ' + retryError.message); return }
           toast.success('Setor criado')
         } else {
@@ -536,24 +763,60 @@ function SetorModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={editingId ? 'Editar Setor' : 'Novo Setor'}>
+    <Modal open={open} onClose={onClose} title={editingId ? 'Editar Setor' : 'Novo Setor'} size="lg">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Input label="Titulo *" {...register('titulo')} error={errors.titulo?.message} />
-        <Select
-          label="Tipo"
-          {...register('tipo')}
-          options={[
-            { value: 'Escritorio', label: 'Escritorio' },
-            { value: 'Producao', label: 'Producao' },
-          ]}
-          placeholder="Selecione"
-        />
-        <Select
-          label="Unidade"
-          {...register('unidade_id')}
-          options={unidades.map((u) => ({ value: u.id as string, label: u.titulo as string }))}
-          placeholder="Selecione"
-        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Select
+            label="Tipo"
+            {...register('tipo')}
+            options={[
+              { value: 'Escritorio', label: 'Escritorio' },
+              { value: 'Producao', label: 'Producao' },
+            ]}
+            placeholder="Selecione"
+          />
+          <Select
+            label="Unidade"
+            {...register('unidade_id')}
+            options={unidades.map((u) => ({ value: u.id as string, label: u.titulo as string }))}
+            placeholder="Selecione"
+          />
+        </div>
+
+        {/* Expediente */}
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-bold text-cinza-preto flex items-center gap-2">
+              <Clock size={16} className="text-laranja" />
+              Expediente
+            </h4>
+            {weeklyHours != null && (
+              <Badge variant="info">{weeklyHours.toString().replace('.', ',')}h Semanais</Badge>
+            )}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-semibold text-cinza-estrutural mb-2">Segunda a Quinta</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Entrada" type="time" {...register('horario_seg_qui_entrada')} />
+                <Input label="Inicio Almoco" type="time" {...register('horario_seg_qui_almoco_inicio')} />
+                <Input label="Fim Almoco" type="time" {...register('horario_seg_qui_almoco_fim')} />
+                <Input label="Saida" type="time" {...register('horario_seg_qui_saida')} />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-cinza-estrutural mb-2">Sexta-feira</p>
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Entrada" type="time" {...register('horario_sex_entrada')} />
+                <Input label="Inicio Almoco" type="time" {...register('horario_sex_almoco_inicio')} />
+                <Input label="Fim Almoco" type="time" {...register('horario_sex_almoco_fim')} />
+                <Input label="Saida" type="time" {...register('horario_sex_saida')} />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="flex justify-end gap-3 pt-4">
           <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
           <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Salvando...' : 'Salvar'}</Button>
