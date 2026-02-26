@@ -20,7 +20,7 @@ import { z } from 'zod'
 import { format, differenceInYears, differenceInMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
-const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viuvo(a)', 'Uniao Estavel']
+const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viúvo(a)', 'União Estável', 'Outro']
 
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11)
@@ -52,11 +52,11 @@ const funcionarioSchema = z.object({
   estado: z.string().optional(),
   cep: z.string().optional(),
   telefone1_descricao: z.string().optional(),
-  telefone1: z.string().optional(),
+  telefone1_numero: z.string().optional(),
   telefone2_descricao: z.string().optional(),
-  telefone2: z.string().optional(),
+  telefone2_numero: z.string().optional(),
   telefone3_descricao: z.string().optional(),
-  telefone3: z.string().optional(),
+  telefone3_numero: z.string().optional(),
   unidade_id: z.string().optional(),
   setor_id: z.string().optional(),
   funcao_id: z.string().optional(),
@@ -64,18 +64,19 @@ const funcionarioSchema = z.object({
   data_desligamento: z.string().optional(),
   motivo_desligamento: z.string().optional(),
   // Horario
-  seg_qui_entrada: z.string().optional(),
-  seg_qui_almoco_inicio: z.string().optional(),
-  seg_qui_almoco_fim: z.string().optional(),
-  seg_qui_saida: z.string().optional(),
-  sexta_entrada: z.string().optional(),
-  sexta_almoco_inicio: z.string().optional(),
-  sexta_almoco_fim: z.string().optional(),
-  sexta_saida: z.string().optional(),
-  // Familia
+  horario_seg_qui_entrada: z.string().optional(),
+  horario_seg_qui_almoco_inicio: z.string().optional(),
+  horario_seg_qui_almoco_fim: z.string().optional(),
+  horario_seg_qui_saida: z.string().optional(),
+  horario_sex_entrada: z.string().optional(),
+  horario_sex_almoco_inicio: z.string().optional(),
+  horario_sex_almoco_fim: z.string().optional(),
+  horario_sex_saida: z.string().optional(),
+  // Familia (stored in `familia` table, not on funcionarios)
   conjuge_nome: z.string().optional(),
   conjuge_nascimento: z.string().optional(),
   filhos: z.array(z.object({
+    id: z.string().optional(),
     nome: z.string(),
     data_nascimento: z.string().optional(),
   })).optional(),
@@ -154,15 +155,19 @@ export default function FuncionarioDetailPage() {
       setSetores(setRes.data || [])
       setFuncoes(funRes.data || [])
 
-      // Parse filhos from JSONB or related table
-      let filhos: { nome: string; data_nascimento?: string }[] = []
-      if (f.filhos && Array.isArray(f.filhos)) {
-        filhos = f.filhos
-      } else {
-        // Try fetching from filhos table
-        const filhosRes = await supabase.from('filhos').select('*').eq('funcionario_id', id).order('nome')
-        if (!filhosRes.error && filhosRes.data) {
-          filhos = filhosRes.data.map((c: Record<string, string>) => ({ nome: c.nome, data_nascimento: c.data_nascimento }))
+      // Load family data from `familia` table
+      let conjuge_nome = ''
+      let conjuge_nascimento = ''
+      let filhos: { id?: string; nome: string; data_nascimento?: string }[] = []
+      const familiaRes = await supabase.from('familia').select('*').eq('funcionario_id', id).order('nome')
+      if (!familiaRes.error && familiaRes.data) {
+        for (const m of familiaRes.data) {
+          if (m.parentesco === 'Cônjuge') {
+            conjuge_nome = m.nome || ''
+            conjuge_nascimento = m.data_nascimento || ''
+          } else {
+            filhos.push({ id: m.id, nome: m.nome, data_nascimento: m.data_nascimento || '' })
+          }
         }
       }
 
@@ -183,27 +188,27 @@ export default function FuncionarioDetailPage() {
         estado: f.estado || '',
         cep: f.cep || '',
         telefone1_descricao: f.telefone1_descricao || '',
-        telefone1: f.telefone1 || '',
+        telefone1_numero: f.telefone1_numero || '',
         telefone2_descricao: f.telefone2_descricao || '',
-        telefone2: f.telefone2 || '',
+        telefone2_numero: f.telefone2_numero || '',
         telefone3_descricao: f.telefone3_descricao || '',
-        telefone3: f.telefone3 || '',
+        telefone3_numero: f.telefone3_numero || '',
         unidade_id: f.unidade_id || '',
         setor_id: f.setor_id || '',
         funcao_id: f.funcao_id || '',
         data_admissao: f.data_admissao || '',
         data_desligamento: f.data_desligamento || '',
         motivo_desligamento: f.motivo_desligamento || '',
-        seg_qui_entrada: f.seg_qui_entrada || '',
-        seg_qui_almoco_inicio: f.seg_qui_almoco_inicio || '',
-        seg_qui_almoco_fim: f.seg_qui_almoco_fim || '',
-        seg_qui_saida: f.seg_qui_saida || '',
-        sexta_entrada: f.sexta_entrada || '',
-        sexta_almoco_inicio: f.sexta_almoco_inicio || '',
-        sexta_almoco_fim: f.sexta_almoco_fim || '',
-        sexta_saida: f.sexta_saida || '',
-        conjuge_nome: f.conjuge_nome || '',
-        conjuge_nascimento: f.conjuge_nascimento || '',
+        horario_seg_qui_entrada: f.horario_seg_qui_entrada || '',
+        horario_seg_qui_almoco_inicio: f.horario_seg_qui_almoco_inicio || '',
+        horario_seg_qui_almoco_fim: f.horario_seg_qui_almoco_fim || '',
+        horario_seg_qui_saida: f.horario_seg_qui_saida || '',
+        horario_sex_entrada: f.horario_sex_entrada || '',
+        horario_sex_almoco_inicio: f.horario_sex_almoco_inicio || '',
+        horario_sex_almoco_fim: f.horario_sex_almoco_fim || '',
+        horario_sex_saida: f.horario_sex_saida || '',
+        conjuge_nome,
+        conjuge_nascimento,
         filhos,
       })
     } catch (err) {
@@ -249,7 +254,7 @@ export default function FuncionarioDetailPage() {
       }
 
       const { filhos, nome, conjuge_nascimento, conjuge_nome, ...restData } = data
-      const basePayload: Record<string, unknown> = {
+      const payload = {
         nome_completo: nome,
         foto_url: fotoUrl || null,
         codigo: restData.codigo || null,
@@ -267,53 +272,61 @@ export default function FuncionarioDetailPage() {
         estado: restData.estado || null,
         cep: restData.cep || null,
         telefone1_descricao: restData.telefone1_descricao || null,
-        telefone1: restData.telefone1 || null,
+        telefone1_numero: restData.telefone1_numero || null,
         telefone2_descricao: restData.telefone2_descricao || null,
-        telefone2: restData.telefone2 || null,
+        telefone2_numero: restData.telefone2_numero || null,
         telefone3_descricao: restData.telefone3_descricao || null,
-        telefone3: restData.telefone3 || null,
+        telefone3_numero: restData.telefone3_numero || null,
         unidade_id: restData.unidade_id || null,
         setor_id: restData.setor_id || null,
         funcao_id: restData.funcao_id || null,
         data_admissao: restData.data_admissao || null,
         data_desligamento: restData.data_desligamento || null,
         motivo_desligamento: restData.data_desligamento ? restData.motivo_desligamento : null,
-        seg_qui_entrada: restData.seg_qui_entrada || null,
-        seg_qui_almoco_inicio: restData.seg_qui_almoco_inicio || null,
-        seg_qui_almoco_fim: restData.seg_qui_almoco_fim || null,
-        seg_qui_saida: restData.seg_qui_saida || null,
-        sexta_entrada: restData.sexta_entrada || null,
-        sexta_almoco_inicio: restData.sexta_almoco_inicio || null,
-        sexta_almoco_fim: restData.sexta_almoco_fim || null,
-        sexta_saida: restData.sexta_saida || null,
-        conjuge_nome: conjuge_nome || null,
+        horario_seg_qui_entrada: restData.horario_seg_qui_entrada || null,
+        horario_seg_qui_almoco_inicio: restData.horario_seg_qui_almoco_inicio || null,
+        horario_seg_qui_almoco_fim: restData.horario_seg_qui_almoco_fim || null,
+        horario_seg_qui_saida: restData.horario_seg_qui_saida || null,
+        horario_sex_entrada: restData.horario_sex_entrada || null,
+        horario_sex_almoco_inicio: restData.horario_sex_almoco_inicio || null,
+        horario_sex_almoco_fim: restData.horario_sex_almoco_fim || null,
+        horario_sex_saida: restData.horario_sex_saida || null,
       }
 
-      // Try saving with conjuge_nascimento first, fallback without it
-      const fullPayload: Record<string, unknown> = { ...basePayload, conjuge_nascimento: conjuge_nascimento || null }
-      let { error } = await supabase.from('funcionarios').update(fullPayload).eq('id', id)
-      if (error?.message?.includes('conjuge_nascimento')) {
-        // Column doesn't exist yet, save without it
-        const retry = await supabase.from('funcionarios').update(basePayload).eq('id', id)
-        error = retry.error
-      }
+      const { error } = await supabase.from('funcionarios').update(payload).eq('id', id)
       if (error) {
         toast.error('Erro ao salvar: ' + error.message)
         return
       }
 
-      // Save filhos - try JSONB column first, then separate table
-      if (filhos !== undefined) {
-        // Try updating filhos as JSONB
-        const { error: filhosError } = await supabase.from('funcionarios').update({ filhos }).eq('id', id)
-        if (filhosError) {
-          // Fallback: use separate table
-          await supabase.from('filhos').delete().eq('funcionario_id', id)
-          if (filhos.length > 0) {
-            await supabase.from('filhos').insert(
-              filhos.map((f) => ({ funcionario_id: id, nome: f.nome, data_nascimento: f.data_nascimento || null }))
-            )
+      // Save family data in `familia` table
+      // Delete existing entries and re-insert
+      await supabase.from('familia').delete().eq('funcionario_id', id)
+      const familiaEntries: { funcionario_id: string; parentesco: string; nome: string; data_nascimento: string | null }[] = []
+      if (conjuge_nome) {
+        familiaEntries.push({
+          funcionario_id: id,
+          parentesco: 'Cônjuge',
+          nome: conjuge_nome,
+          data_nascimento: conjuge_nascimento || null,
+        })
+      }
+      if (filhos) {
+        for (const filho of filhos) {
+          if (filho.nome) {
+            familiaEntries.push({
+              funcionario_id: id,
+              parentesco: 'Filho(a)',
+              nome: filho.nome,
+              data_nascimento: filho.data_nascimento || null,
+            })
           }
+        }
+      }
+      if (familiaEntries.length > 0) {
+        const { error: familiaError } = await supabase.from('familia').insert(familiaEntries)
+        if (familiaError) {
+          console.error('Erro ao salvar familia:', familiaError)
         }
       }
 
@@ -515,8 +528,8 @@ export default function FuncionarioDetailPage() {
                     <div className="col-span-2">
                       <Input
                         label={`Telefone ${n}`}
-                        value={(watch(`telefone${n}` as keyof FuncionarioFormData) as string) || ''}
-                        onChange={(e) => setValue(`telefone${n}` as keyof FuncionarioFormData, formatPhone(e.target.value))}
+                        value={(watch(`telefone${n}_numero` as keyof FuncionarioFormData) as string) || ''}
+                        onChange={(e) => setValue(`telefone${n}_numero` as keyof FuncionarioFormData, formatPhone(e.target.value))}
                         placeholder="(00) 00000-0000"
                         disabled={!editing}
                       />
@@ -574,19 +587,19 @@ export default function FuncionarioDetailPage() {
                 <div>
                   <h4 className="text-sm font-semibold text-cinza-estrutural mb-3">Segunda a Quinta</h4>
                   <div className="grid grid-cols-2 gap-3">
-                    <Input label="Entrada" type="time" {...register('seg_qui_entrada')} disabled={!editing} />
-                    <Input label="Inicio Almoco" type="time" {...register('seg_qui_almoco_inicio')} disabled={!editing} />
-                    <Input label="Fim Almoco" type="time" {...register('seg_qui_almoco_fim')} disabled={!editing} />
-                    <Input label="Saida" type="time" {...register('seg_qui_saida')} disabled={!editing} />
+                    <Input label="Entrada" type="time" {...register('horario_seg_qui_entrada')} disabled={!editing} />
+                    <Input label="Inicio Almoco" type="time" {...register('horario_seg_qui_almoco_inicio')} disabled={!editing} />
+                    <Input label="Fim Almoco" type="time" {...register('horario_seg_qui_almoco_fim')} disabled={!editing} />
+                    <Input label="Saida" type="time" {...register('horario_seg_qui_saida')} disabled={!editing} />
                   </div>
                 </div>
                 <div>
                   <h4 className="text-sm font-semibold text-cinza-estrutural mb-3">Sexta-feira</h4>
                   <div className="grid grid-cols-2 gap-3">
-                    <Input label="Entrada" type="time" {...register('sexta_entrada')} disabled={!editing} />
-                    <Input label="Inicio Almoco" type="time" {...register('sexta_almoco_inicio')} disabled={!editing} />
-                    <Input label="Fim Almoco" type="time" {...register('sexta_almoco_fim')} disabled={!editing} />
-                    <Input label="Saida" type="time" {...register('sexta_saida')} disabled={!editing} />
+                    <Input label="Entrada" type="time" {...register('horario_sex_entrada')} disabled={!editing} />
+                    <Input label="Inicio Almoco" type="time" {...register('horario_sex_almoco_inicio')} disabled={!editing} />
+                    <Input label="Fim Almoco" type="time" {...register('horario_sex_almoco_fim')} disabled={!editing} />
+                    <Input label="Saida" type="time" {...register('horario_sex_saida')} disabled={!editing} />
                   </div>
                 </div>
               </div>
