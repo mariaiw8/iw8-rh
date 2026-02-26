@@ -12,13 +12,22 @@ import { Select } from '@/components/ui/Select'
 import { FileUpload } from '@/components/ui/FileUpload'
 import { Skeleton } from '@/components/ui/LoadingSkeleton'
 import { createClient } from '@/lib/supabase'
-import { ArrowLeft, Pencil, Save, X, Plus, Trash2, Clock, Building2 } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Plus, Trash2, Clock, Building2, Calendar, DollarSign, ClipboardList, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { format, differenceInYears, differenceInMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { useFerias, type FeriasSaldo, type Ferias } from '@/hooks/useFerias'
+import { useOcorrencias, type Ocorrencia, type TipoOcorrencia } from '@/hooks/useOcorrencias'
+import { SaldoFerias } from '@/components/ferias/SaldoFerias'
+import { FeriasAlert } from '@/components/ferias/FeriasAlert'
+import { FeriasForm, type FeriasFormData } from '@/components/ferias/FeriasForm'
+import { VenderFeriasForm } from '@/components/ferias/VenderFeriasForm'
+import { OcorrenciaForm, type OcorrenciaFormData } from '@/components/ocorrencias/OcorrenciaForm'
+import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from '@/components/ui/Table'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viuvo(a)', 'Uniao Estavel']
 
@@ -741,21 +750,402 @@ export default function FuncionarioDetailPage() {
         )}
 
         {activeTab === 'ferias' && (
-          <Card>
-            <div className="py-12 text-center">
-              <p className="text-cinza-estrutural">Modulo de Ferias sera implementado na Etapa 2</p>
-            </div>
-          </Card>
+          <FeriasTab
+            funcionarioId={id}
+            funcionarioNome={(funcionario.nome_completo || funcionario.nome) as string}
+          />
         )}
 
         {activeTab === 'ocorrencias' && (
-          <Card>
-            <div className="py-12 text-center">
-              <p className="text-cinza-estrutural">Modulo de Ocorrencias sera implementado na Etapa 2</p>
-            </div>
-          </Card>
+          <OcorrenciasTab
+            funcionarioId={id}
+            funcionarioNome={(funcionario.nome_completo || funcionario.nome) as string}
+          />
         )}
       </form>
     </PageContainer>
+  )
+}
+
+// =================== FERIAS TAB ===================
+function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; funcionarioNome: string }) {
+  const {
+    loadFeriasFuncionario,
+    loadSaldosFuncionario,
+    createFerias,
+    deleteFerias,
+    venderFerias,
+    updateSaldoDireito,
+  } = useFerias()
+
+  const [saldos, setSaldos] = useState<FeriasSaldo[]>([])
+  const [ferias, setFerias] = useState<Ferias[]>([])
+  const [loadingFerias, setLoadingFerias] = useState(true)
+  const [showFeriasForm, setShowFeriasForm] = useState(false)
+  const [showVenderForm, setShowVenderForm] = useState(false)
+
+  const loadData = useCallback(async () => {
+    setLoadingFerias(true)
+    try {
+      const [s, f] = await Promise.all([
+        loadSaldosFuncionario(funcionarioId),
+        loadFeriasFuncionario(funcionarioId),
+      ])
+      setSaldos(s)
+      setFerias(f)
+    } finally {
+      setLoadingFerias(false)
+    }
+  }, [funcionarioId, loadSaldosFuncionario, loadFeriasFuncionario])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  const proximaFerias = ferias.find((f) => f.status === 'Programada')
+  const alertCount = saldos.filter((s) => {
+    const vencimento = new Date(s.data_vencimento + 'T00:00:00')
+    const now = new Date()
+    const diffMs = vencimento.getTime() - now.getTime()
+    const diffDays = diffMs / (1000 * 60 * 60 * 24)
+    return diffDays > 0 && diffDays <= 120 && s.dias_restantes > 0
+  }).length
+  const vencidaCount = saldos.filter((s) => s.status === 'Vencido').length
+
+  async function handleCreateFerias(data: FeriasFormData) {
+    await createFerias({
+      funcionario_id: data.funcionario_id,
+      data_inicio: data.data_inicio,
+      data_fim: data.data_fim,
+      dias: data.dias,
+      tipo: data.tipo,
+      periodo_aquisitivo_id: data.periodo_aquisitivo_id || undefined,
+      abono_pecuniario: data.abono_pecuniario,
+      dias_vendidos: data.dias_vendidos,
+      observacao: data.observacao || undefined,
+    })
+    loadData()
+  }
+
+  async function handleVender(periodoId: string, dias: number) {
+    const ok = await venderFerias(periodoId, dias)
+    if (ok) loadData()
+    return ok
+  }
+
+  async function handleDeleteFerias(id: string) {
+    if (!confirm('Deseja excluir estas ferias?')) return
+    await deleteFerias(id)
+    loadData()
+  }
+
+  async function handleUpdateDireito(saldoId: string, dias: number) {
+    const ok = await updateSaldoDireito(saldoId, dias)
+    if (ok) loadData()
+    return ok
+  }
+
+  if (loadingFerias) {
+    return (
+      <Card>
+        <div className="space-y-4">
+          <div className="h-20 bg-gray-100 rounded animate-pulse" />
+          <div className="h-40 bg-gray-100 rounded animate-pulse" />
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Mini Dashboard */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <SaldoFerias saldos={saldos} onUpdateDireito={handleUpdateDireito} />
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs font-medium text-cinza-estrutural mb-1">Proximas Ferias</p>
+          {proximaFerias ? (
+            <>
+              <p className="text-lg font-bold text-cinza-preto">
+                {format(new Date(proximaFerias.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}
+              </p>
+              <p className="text-xs text-cinza-estrutural mt-1">
+                ate {format(new Date(proximaFerias.data_fim + 'T00:00:00'), 'dd/MM/yyyy')} ({proximaFerias.dias} dias)
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-lg font-bold text-cinza-preto">-</p>
+              <p className="text-xs text-cinza-estrutural mt-1">Nenhuma programada</p>
+            </>
+          )}
+        </div>
+        <FeriasAlert alertCount={alertCount} vencidaCount={vencidaCount} />
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex gap-2">
+        <Button type="button" onClick={() => setShowFeriasForm(true)}>
+          <Plus size={16} /> Adicionar Ferias
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => setShowVenderForm(true)}>
+          <DollarSign size={16} /> Vender Ferias
+        </Button>
+      </div>
+
+      {/* Historico */}
+      <Card>
+        <h3 className="text-lg font-bold text-cinza-preto mb-4 flex items-center gap-2">
+          <Calendar size={18} className="text-azul-medio" />
+          Historico de Ferias
+        </h3>
+        {ferias.length === 0 ? (
+          <EmptyState
+            icon={<Calendar size={40} />}
+            title="Nenhum registro"
+            description="Nenhuma ferias registrada para este funcionario"
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableHead>Periodo Aquisitivo</TableHead>
+              <TableHead>Data Inicio</TableHead>
+              <TableHead>Data Fim</TableHead>
+              <TableHead>Dias</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Observacao</TableHead>
+              <TableHead className="w-10"></TableHead>
+            </TableHeader>
+            <TableBody>
+              {ferias.map((f) => {
+                const saldo = saldos.find((s) => s.id === f.periodo_aquisitivo_id)
+                return (
+                  <TableRow key={f.id}>
+                    <TableCell>
+                      {saldo
+                        ? `${format(new Date(saldo.periodo_inicio + 'T00:00:00'), 'dd/MM/yy')} - ${format(new Date(saldo.periodo_fim + 'T00:00:00'), 'dd/MM/yy')}`
+                        : '-'}
+                    </TableCell>
+                    <TableCell>{format(new Date(f.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
+                    <TableCell>{format(new Date(f.data_fim + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
+                    <TableCell>{f.dias}</TableCell>
+                    <TableCell>{f.tipo}</TableCell>
+                    <TableCell>
+                      <Badge variant={
+                        f.status === 'Programada' ? 'info'
+                        : f.status === 'Em Andamento' ? 'warning'
+                        : f.status === 'Concluida' ? 'success'
+                        : 'neutral'
+                      }>{f.status}</Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[150px] truncate">{f.observacao || '-'}</TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFerias(f.id)}
+                        className="text-red-500 hover:bg-red-50 p-1 rounded"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
+
+      <FeriasForm
+        open={showFeriasForm}
+        onClose={() => setShowFeriasForm(false)}
+        onSubmit={handleCreateFerias}
+        funcionarioId={funcionarioId}
+        funcionarioNome={funcionarioNome}
+      />
+      <VenderFeriasForm
+        open={showVenderForm}
+        onClose={() => setShowVenderForm(false)}
+        saldos={saldos}
+        onSubmit={handleVender}
+      />
+    </div>
+  )
+}
+
+// =================== OCORRENCIAS TAB ===================
+function OcorrenciasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; funcionarioNome: string }) {
+  const {
+    loadOcorrenciasFuncionario,
+    loadTipos,
+    createOcorrencia,
+    deleteOcorrencia,
+  } = useOcorrencias()
+
+  const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>([])
+  const [tipos, setTipos] = useState<TipoOcorrencia[]>([])
+  const [loadingOcorrencias, setLoadingOcorrencias] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [filterTipo, setFilterTipo] = useState('')
+  const [filterDataInicio, setFilterDataInicio] = useState('')
+  const [filterDataFim, setFilterDataFim] = useState('')
+
+  const loadData = useCallback(async () => {
+    setLoadingOcorrencias(true)
+    try {
+      const [o, t] = await Promise.all([
+        loadOcorrenciasFuncionario(funcionarioId),
+        loadTipos(),
+      ])
+      setOcorrencias(o)
+      setTipos(t)
+    } finally {
+      setLoadingOcorrencias(false)
+    }
+  }, [funcionarioId, loadOcorrenciasFuncionario, loadTipos])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
+  let filtered = ocorrencias
+  if (filterTipo) {
+    filtered = filtered.filter((o) => o.tipo_ocorrencia_id === filterTipo)
+  }
+  if (filterDataInicio) {
+    filtered = filtered.filter((o) => o.data_inicio >= filterDataInicio)
+  }
+  if (filterDataFim) {
+    filtered = filtered.filter((o) => o.data_inicio <= filterDataFim)
+  }
+
+  async function handleCreate(data: OcorrenciaFormData) {
+    await createOcorrencia({
+      funcionario_id: data.funcionario_id,
+      tipo_ocorrencia_id: data.tipo_ocorrencia_id,
+      descricao: data.descricao || undefined,
+      data_inicio: data.data_inicio,
+      data_fim: data.data_fim || undefined,
+      dias: data.dias,
+      valor: data.valor || undefined,
+      arquivo_url: data.arquivo_url || undefined,
+      observacao: data.observacao || undefined,
+    })
+    loadData()
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Deseja excluir esta ocorrencia?')) return
+    await deleteOcorrencia(id)
+    loadData()
+  }
+
+  if (loadingOcorrencias) {
+    return (
+      <Card>
+        <div className="h-40 bg-gray-100 rounded animate-pulse" />
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Action + Filters */}
+      <div className="flex flex-wrap items-end gap-4">
+        <Button type="button" onClick={() => setShowForm(true)}>
+          <Plus size={16} /> Registrar Ocorrencia
+        </Button>
+        <Select
+          value={filterTipo}
+          onChange={(e) => setFilterTipo(e.target.value)}
+          options={[{ value: '', label: 'Todos os tipos' }, ...tipos.map((t) => ({ value: t.id, label: t.titulo }))]}
+        />
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={filterDataInicio}
+            onChange={(e) => setFilterDataInicio(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          />
+          <span className="text-cinza-estrutural text-sm">ate</span>
+          <input
+            type="date"
+            value={filterDataFim}
+            onChange={(e) => setFilterDataFim(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          />
+        </div>
+      </div>
+
+      <Card>
+        <h3 className="text-lg font-bold text-cinza-preto mb-4 flex items-center gap-2">
+          <ClipboardList size={18} className="text-laranja" />
+          Ocorrencias
+          {filtered.length > 0 && <Badge variant="neutral">{filtered.length}</Badge>}
+        </h3>
+        {filtered.length === 0 ? (
+          <EmptyState
+            icon={<ClipboardList size={40} />}
+            title="Nenhuma ocorrencia"
+            description="Nenhuma ocorrencia registrada"
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableHead>Data</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Descricao</TableHead>
+              <TableHead>Dias</TableHead>
+              <TableHead>Valor</TableHead>
+              <TableHead>Anexo</TableHead>
+              <TableHead>Observacao</TableHead>
+              <TableHead className="w-10"></TableHead>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((o) => (
+                <TableRow key={o.id}>
+                  <TableCell>{format(new Date(o.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
+                  <TableCell>
+                    <span
+                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
+                      style={{ backgroundColor: o.tipo_cor || '#888' }}
+                    >
+                      {o.tipo_titulo}
+                    </span>
+                  </TableCell>
+                  <TableCell className="max-w-[200px] truncate">{o.descricao || '-'}</TableCell>
+                  <TableCell>{o.dias}</TableCell>
+                  <TableCell>
+                    {o.valor ? `R$ ${Number(o.valor).toFixed(2).replace('.', ',')}` : '-'}
+                  </TableCell>
+                  <TableCell>
+                    {o.arquivo_url ? (
+                      <a href={o.arquivo_url} target="_blank" rel="noopener noreferrer" className="text-azul-medio hover:text-azul">
+                        <ExternalLink size={16} />
+                      </a>
+                    ) : '-'}
+                  </TableCell>
+                  <TableCell className="max-w-[150px] truncate">{o.observacao || '-'}</TableCell>
+                  <TableCell>
+                    <button type="button" onClick={() => handleDelete(o.id)} className="text-red-500 hover:bg-red-50 p-1 rounded">
+                      <Trash2 size={14} />
+                    </button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
+
+      <OcorrenciaForm
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        onSubmit={handleCreate}
+        funcionarioId={funcionarioId}
+        funcionarioNome={funcionarioNome}
+        tipos={tipos}
+      />
+    </div>
   )
 }

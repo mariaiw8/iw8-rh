@@ -8,6 +8,8 @@ const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
   '/funcionarios': 'Funcionarios',
   '/cadastros': 'Cadastros',
+  '/ferias': 'Ferias',
+  '/ocorrencias': 'Ocorrencias',
 }
 
 export function Header() {
@@ -33,6 +35,8 @@ export function Header() {
       const labels: Record<string, string> = {
         funcionarios: 'Funcionarios',
         cadastros: 'Cadastros',
+        ferias: 'Ferias',
+        ocorrencias: 'Ocorrencias',
       }
       return labels[part] || part
     })
