@@ -52,13 +52,11 @@ const navItems: NavItem[] = [
     label: 'Ferias',
     href: '/ferias',
     icon: <Palmtree size={20} />,
-    disabled: true,
   },
   {
     label: 'Ocorrencias',
     href: '/ocorrencias',
     icon: <ClipboardList size={20} />,
-    disabled: true,
   },
 ]
 

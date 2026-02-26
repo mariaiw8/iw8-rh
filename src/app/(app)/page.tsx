@@ -11,6 +11,13 @@ import { createClient } from '@/lib/supabase'
 import { Users, Palmtree, AlertTriangle, CalendarClock, Cake, UserPlus } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import dynamic from 'next/dynamic'
+import { SetoreChart, AdmissoesChart, OcorrenciasChart } from '@/components/dashboard/Charts'
+
+const DashboardCalendar = dynamic(
+  () => import('@/components/dashboard/Calendar').then(mod => ({ default: mod.DashboardCalendar })),
+  { ssr: false, loading: () => <div className="h-96 bg-gray-100 rounded-xl animate-pulse" /> }
+)
 
 interface DashboardData {
   totalAtivos: number
@@ -240,6 +247,30 @@ export default function DashboardPage() {
             <p className="text-sm text-cinza-estrutural">Nenhuma admissao nos ultimos 30 dias</p>
           )}
         </Card>
+      </div>
+
+      {/* Calendario */}
+      <div className="mt-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <div className="flex items-center gap-2">
+                <CalendarClock size={18} className="text-azul-medio" />
+                Calendario
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <DashboardCalendar />
+        </Card>
+      </div>
+
+      {/* Graficos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <SetoreChart />
+        <OcorrenciasChart />
+      </div>
+      <div className="mt-6">
+        <AdmissoesChart />
       </div>
     </PageContainer>
   )
