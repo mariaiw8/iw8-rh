@@ -88,32 +88,14 @@ function CadastrosPage() {
     setLoading(true)
     try {
       const [uniRes, setRes, funRes] = await Promise.all([
-        supabase.from('vw_resumo_unidades').select('*').order('titulo'),
-        supabase.from('vw_resumo_setores').select('*').order('titulo'),
+        supabase.from('unidades').select('*').order('titulo'),
+        supabase.from('setores').select('*, unidades(titulo)').order('titulo'),
         supabase.from('funcoes').select('*, setores(titulo)').order('titulo'),
       ])
 
-      // If views don't exist, fall back to base tables
-      if (uniRes.error) {
-        const fallback = await supabase.from('unidades').select('*').order('titulo')
-        setUnidades(fallback.data || [])
-      } else {
-        setUnidades(uniRes.data || [])
-      }
-
-      if (setRes.error) {
-        const fallback = await supabase.from('setores').select('*, unidades(titulo)').order('titulo')
-        setSetores(fallback.data || [])
-      } else {
-        setSetores(setRes.data || [])
-      }
-
-      if (funRes.error) {
-        const fallback = await supabase.from('funcoes').select('*, setores(titulo)').order('titulo')
-        setFuncoes(fallback.data || [])
-      } else {
-        setFuncoes(funRes.data || [])
-      }
+      setUnidades(uniRes.data || [])
+      setSetores(setRes.data || [])
+      setFuncoes(funRes.data || [])
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
       toast.error('Erro ao carregar dados')
@@ -464,6 +446,10 @@ function SetorModal({
   }, [open, editingId, supabase, reset])
 
   async function onSubmit(data: SetorForm) {
+    if (!data.tipo || data.tipo.trim() === '') {
+      toast.error('Selecione o tipo do setor')
+      return
+    }
     const payload = {
       titulo: data.titulo,
       tipo: data.tipo,
