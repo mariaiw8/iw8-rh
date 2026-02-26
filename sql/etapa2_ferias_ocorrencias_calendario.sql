@@ -9,13 +9,26 @@
 CREATE TABLE IF NOT EXISTS tipos_ocorrencia (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   titulo text NOT NULL,
-  categoria text NOT NULL CHECK (categoria IN ('Remuneracao', 'Ausencia', 'Disciplinar', 'Beneficio', 'Outro')),
+  categoria text NOT NULL DEFAULT 'Outro',
   cor text NOT NULL DEFAULT '#3B82F6',
   created_at timestamptz DEFAULT now()
 );
 
--- Tipos padrao
-INSERT INTO tipos_ocorrencia (titulo, categoria, cor) VALUES
+-- Remover constraint antiga (se existir) e recriar com valores corretos
+ALTER TABLE tipos_ocorrencia DROP CONSTRAINT IF EXISTS tipos_ocorrencia_categoria_check;
+ALTER TABLE tipos_ocorrencia ADD CONSTRAINT tipos_ocorrencia_categoria_check
+  CHECK (categoria IN ('Remuneracao', 'Ausencia', 'Disciplinar', 'Beneficio', 'Outro'));
+
+-- Corrigir categorias existentes que possam ter acentos
+UPDATE tipos_ocorrencia SET categoria = 'Remuneracao' WHERE categoria IN ('Remuneração', 'remuneracao', 'remuneração');
+UPDATE tipos_ocorrencia SET categoria = 'Ausencia' WHERE categoria IN ('Ausência', 'ausencia', 'ausência');
+UPDATE tipos_ocorrencia SET categoria = 'Beneficio' WHERE categoria IN ('Benefício', 'beneficio', 'benefício');
+UPDATE tipos_ocorrencia SET categoria = 'Disciplinar' WHERE categoria IN ('disciplinar');
+UPDATE tipos_ocorrencia SET categoria = 'Outro' WHERE categoria NOT IN ('Remuneracao', 'Ausencia', 'Disciplinar', 'Beneficio', 'Outro');
+
+-- Tipos padrao (insere apenas se a tabela estiver vazia)
+INSERT INTO tipos_ocorrencia (titulo, categoria, cor)
+SELECT titulo, categoria, cor FROM (VALUES
   ('Atestado Medico', 'Ausencia', '#EF4444'),
   ('Falta Justificada', 'Ausencia', '#F97316'),
   ('Falta Injustificada', 'Ausencia', '#DC2626'),
@@ -30,7 +43,8 @@ INSERT INTO tipos_ocorrencia (titulo, categoria, cor) VALUES
   ('Licenca Paternidade', 'Ausencia', '#8B5CF6'),
   ('Afastamento INSS', 'Ausencia', '#78716C'),
   ('Outro', 'Outro', '#6B7280')
-ON CONFLICT DO NOTHING;
+) AS defaults(titulo, categoria, cor)
+WHERE NOT EXISTS (SELECT 1 FROM tipos_ocorrencia LIMIT 1);
 
 -- =====================================================
 -- 2. TABELA: ferias_saldo (Periodos Aquisitivos)
@@ -141,7 +155,6 @@ CREATE INDEX IF NOT EXISTS idx_filhos_funcionario ON filhos(funcionario_id);
 CREATE OR REPLACE FUNCTION fn_atualizar_status_ferias_saldo()
 RETURNS TRIGGER AS $$
 BEGIN
-  -- Calcular dias_restantes (campo GENERATED, mas precisamos do status)
   IF (NEW.dias_direito - NEW.dias_gozados - NEW.dias_vendidos) <= 0 THEN
     NEW.status := 'Gozado';
   ELSIF NEW.data_vencimento < CURRENT_DATE AND (NEW.dias_direito - NEW.dias_gozados - NEW.dias_vendidos) > 0 THEN
@@ -168,20 +181,17 @@ CREATE TRIGGER trg_ferias_saldo_status
 CREATE OR REPLACE FUNCTION fn_atualizar_status_ferias()
 RETURNS void AS $$
 BEGIN
-  -- Ferias que ja comecaram
   UPDATE ferias
   SET status = 'Em Andamento'
   WHERE status = 'Programada'
     AND data_inicio <= CURRENT_DATE
     AND data_fim >= CURRENT_DATE;
 
-  -- Ferias que ja terminaram
   UPDATE ferias
   SET status = 'Concluida'
   WHERE status IN ('Programada', 'Em Andamento')
     AND data_fim < CURRENT_DATE;
 
-  -- Atualizar saldos vencidos
   UPDATE ferias_saldo
   SET status = 'Vencido'
   WHERE status NOT IN ('Gozado', 'Vencido')
@@ -247,7 +257,6 @@ ORDER BY fer.data_inicio ASC;
 -- 11. VIEW: vw_calendario (Unificada)
 -- =====================================================
 CREATE OR REPLACE VIEW vw_calendario AS
--- Ferias individuais
 SELECT
   fer.id,
   'Ferias - ' || f.nome_completo AS titulo,
@@ -263,7 +272,6 @@ WHERE fer.status != 'Cancelada'
 
 UNION ALL
 
--- Ocorrencias
 SELECT
   o.id,
   t.titulo || ' - ' || f.nome_completo AS titulo,
@@ -279,7 +287,6 @@ JOIN tipos_ocorrencia t ON t.id = o.tipo_ocorrencia_id
 
 UNION ALL
 
--- Ferias coletivas
 SELECT
   fc.id,
   'Coletivas: ' || fc.titulo AS titulo,
@@ -292,7 +299,7 @@ SELECT
 FROM ferias_coletivas fc;
 
 -- =====================================================
--- 12. VIEW: vw_resumo_setores (caso nao exista)
+-- 12. VIEW: vw_resumo_setores
 -- =====================================================
 CREATE OR REPLACE VIEW vw_resumo_setores AS
 SELECT
@@ -309,7 +316,7 @@ GROUP BY s.id, s.titulo, s.tipo, s.unidade_id, u.titulo
 ORDER BY s.titulo;
 
 -- =====================================================
--- 13. VIEW: vw_resumo_unidades (caso nao exista)
+-- 13. VIEW: vw_resumo_unidades
 -- =====================================================
 CREATE OR REPLACE VIEW vw_resumo_unidades AS
 SELECT
@@ -328,7 +335,6 @@ ORDER BY u.titulo;
 
 -- =====================================================
 -- 14. FUNCAO: Creditar saldo automatico na admissao
---     (30 dias a cada aniversario de admissao)
 -- =====================================================
 CREATE OR REPLACE FUNCTION fn_creditar_ferias_saldo()
 RETURNS void AS $$
@@ -350,10 +356,8 @@ BEGIN
       periodo_end := rec.data_admissao + ((ano_count + 1) * INTERVAL '1 year') - INTERVAL '1 day';
       vencimento := rec.data_admissao + ((ano_count + 2) * INTERVAL '1 year') - INTERVAL '1 day';
 
-      -- Sair se o periodo ainda nao comecou
       EXIT WHEN periodo_start > CURRENT_DATE;
 
-      -- Inserir apenas se nao existir
       INSERT INTO ferias_saldo (funcionario_id, periodo_inicio, periodo_fim, dias_direito, data_vencimento)
       SELECT rec.id, periodo_start::date, periodo_end::date, 30, vencimento::date
       WHERE NOT EXISTS (
@@ -372,10 +376,8 @@ $$ LANGUAGE plpgsql;
 SELECT fn_creditar_ferias_saldo();
 
 -- =====================================================
--- 15. RLS (Row Level Security) - Politicas basicas
+-- 15. RLS (Row Level Security)
 -- =====================================================
-
--- Habilitar RLS nas novas tabelas
 ALTER TABLE tipos_ocorrencia ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ferias_saldo ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ferias ENABLE ROW LEVEL SECURITY;
@@ -383,7 +385,6 @@ ALTER TABLE ferias_coletivas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ocorrencias ENABLE ROW LEVEL SECURITY;
 ALTER TABLE filhos ENABLE ROW LEVEL SECURITY;
 
--- Politicas: usuarios autenticados podem tudo (ajuste conforme necessidade)
 DO $$
 DECLARE
   tbl TEXT;
@@ -412,23 +413,3 @@ BEGIN
   END LOOP;
 END;
 $$;
-
--- =====================================================
--- 16. STORAGE: Politica para bucket arquivos-rh
--- =====================================================
--- (Caso a pasta atestados ainda nao tenha politica)
--- Executar apenas se necessario:
---
--- INSERT INTO storage.buckets (id, name, public)
--- VALUES ('arquivos-rh', 'arquivos-rh', true)
--- ON CONFLICT (id) DO NOTHING;
-
--- =====================================================
--- PRONTO! Execute fn_atualizar_status_ferias()
--- periodicamente (cron ou edge function) para manter
--- os status de ferias atualizados automaticamente.
--- =====================================================
-
--- Exemplo de execucao manual:
--- SELECT fn_atualizar_status_ferias();
--- SELECT fn_creditar_ferias_saldo();
