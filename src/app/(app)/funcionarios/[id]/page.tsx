@@ -819,7 +819,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
       data_fim: data.data_fim,
       dias: data.dias,
       tipo: data.tipo,
-      periodo_aquisitivo_id: data.periodo_aquisitivo_id || undefined,
+      ferias_saldo_id: data.ferias_saldo_id || undefined,
       abono_pecuniario: data.abono_pecuniario,
       dias_vendidos: data.dias_vendidos,
       observacao: data.observacao || undefined,
@@ -918,12 +918,12 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
             </TableHeader>
             <TableBody>
               {ferias.map((f) => {
-                const saldo = saldos.find((s) => s.id === f.periodo_aquisitivo_id)
+                const saldo = saldos.find((s) => s.id === f.ferias_saldo_id)
                 return (
                   <TableRow key={f.id}>
                     <TableCell>
                       {saldo
-                        ? `${format(new Date(saldo.periodo_inicio + 'T00:00:00'), 'dd/MM/yy')} - ${format(new Date(saldo.periodo_fim + 'T00:00:00'), 'dd/MM/yy')}`
+                        ? `${format(new Date(saldo.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yy')} - ${format(new Date(saldo.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yy')}`
                         : '-'}
                     </TableCell>
                     <TableCell>{format(new Date(f.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>

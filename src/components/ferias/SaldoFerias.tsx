@@ -17,7 +17,7 @@ interface SaldoFeriasProps {
 
 function getStatusVariant(status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
   switch (status) {
-    case 'Disponivel': return 'success'
+    case 'Disponivel': case 'Disponível': return 'success'
     case 'Parcial': return 'warning'
     case 'Gozado': return 'neutral'
     case 'Vencido': return 'danger'
@@ -76,7 +76,7 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
               saldos.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
-                    {format(new Date(s.periodo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} - {format(new Date(s.periodo_fim + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {format(new Date(s.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} - {format(new Date(s.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')}
                   </TableCell>
                   <TableCell>
                     {editingId === s.id ? (

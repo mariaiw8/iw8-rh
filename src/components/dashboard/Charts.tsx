@@ -38,13 +38,13 @@ export function SetoreChart() {
   async function loadData() {
     const { data: resumo } = await supabase
       .from('vw_resumo_setores')
-      .select('titulo, num_funcionarios')
+      .select('setor, num_funcionarios')
       .order('num_funcionarios', { ascending: false })
       .limit(10)
 
     if (resumo) {
       setData(resumo.map((r: Record<string, unknown>) => ({
-        nome: (r.titulo as string)?.length > 15 ? (r.titulo as string).slice(0, 15) + '...' : (r.titulo as string),
+        nome: ((r.setor || r.titulo) as string)?.length > 15 ? ((r.setor || r.titulo) as string).slice(0, 15) + '...' : ((r.setor || r.titulo) as string),
         funcionarios: (r.num_funcionarios || 0) as number,
       })))
     }

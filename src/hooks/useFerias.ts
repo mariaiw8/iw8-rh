@@ -7,8 +7,8 @@ import { toast } from 'sonner'
 export interface FeriasSaldo {
   id: string
   funcionario_id: string
-  periodo_inicio: string
-  periodo_fim: string
+  periodo_aquisitivo_inicio: string
+  periodo_aquisitivo_fim: string
   dias_direito: number
   dias_gozados: number
   dias_vendidos: number
@@ -29,7 +29,7 @@ export interface Ferias {
   dias: number
   tipo: string
   status: string
-  periodo_aquisitivo_id?: string
+  ferias_saldo_id?: string
   abono_pecuniario?: boolean
   dias_vendidos?: number
   observacao?: string
@@ -39,7 +39,7 @@ export interface Ferias {
 export interface FeriasAVencer {
   id: string
   funcionario_id: string
-  nome: string
+  nome_completo: string
   codigo?: string
   periodo_aquisitivo: string
   dias_restantes: number
@@ -51,7 +51,7 @@ export interface FeriasAVencer {
 export interface ProximasFerias {
   id: string
   funcionario_id: string
-  nome: string
+  nome_completo: string
   codigo?: string
   unidade?: string
   setor?: string
@@ -88,7 +88,20 @@ export function useFerias() {
         .order('dias_para_vencer', { ascending: true })
 
       if (error) throw error
-      return (data || []) as FeriasAVencer[]
+
+      return (data || []).map((d: Record<string, unknown>) => ({
+        id: (d.saldo_id || d.id) as string,
+        funcionario_id: d.funcionario_id as string,
+        nome_completo: (d.nome_completo || d.nome || '') as string,
+        codigo: (d.codigo || '') as string,
+        periodo_aquisitivo: d.periodo_aquisitivo_inicio && d.periodo_aquisitivo_fim
+          ? `${(d.periodo_aquisitivo_inicio as string).slice(0, 10)} a ${(d.periodo_aquisitivo_fim as string).slice(0, 10)}`
+          : (d.periodo_aquisitivo || '') as string,
+        dias_restantes: (d.dias_restantes || 0) as number,
+        data_vencimento: d.data_vencimento as string,
+        dias_para_vencer: (d.dias_para_vencer || 0) as number,
+        situacao: d.situacao as 'VENCIDA' | 'ALERTA' | 'OK',
+      })) as FeriasAVencer[]
     } catch (err) {
       console.error('Erro ao carregar ferias a vencer:', err)
       return []
@@ -105,7 +118,19 @@ export function useFerias() {
         .order('data_inicio', { ascending: true })
 
       if (error) throw error
-      return (data || []) as ProximasFerias[]
+
+      return (data || []).map((d: Record<string, unknown>) => ({
+        id: (d.ferias_id || d.id) as string,
+        funcionario_id: d.funcionario_id as string,
+        nome_completo: (d.nome_completo || d.nome || '') as string,
+        codigo: (d.codigo || '') as string,
+        unidade: (d.unidade || '') as string,
+        setor: (d.setor || '') as string,
+        data_inicio: d.data_inicio as string,
+        data_fim: d.data_fim as string,
+        dias: (d.dias || 0) as number,
+        status: d.status as string,
+      })) as ProximasFerias[]
     } catch (err) {
       console.error('Erro ao carregar proximas ferias:', err)
       return []
@@ -134,7 +159,7 @@ export function useFerias() {
         .from('ferias_saldo')
         .select('*')
         .eq('funcionario_id', funcionarioId)
-        .order('periodo_inicio', { ascending: false })
+        .order('periodo_aquisitivo_inicio', { ascending: false })
 
       if (error) throw error
       return (data || []) as FeriasSaldo[]
@@ -151,7 +176,7 @@ export function useFerias() {
     dias: number
     tipo?: string
     status?: string
-    periodo_aquisitivo_id?: string
+    ferias_saldo_id?: string
     abono_pecuniario?: boolean
     dias_vendidos?: number
     observacao?: string
@@ -169,12 +194,12 @@ export function useFerias() {
 
       if (error) throw error
 
-      // Update saldo if periodo_aquisitivo_id is provided
-      if (payload.periodo_aquisitivo_id) {
+      // Update saldo if ferias_saldo_id is provided
+      if (payload.ferias_saldo_id) {
         const { data: saldo } = await supabase
           .from('ferias_saldo')
           .select('dias_gozados, dias_vendidos')
-          .eq('id', payload.periodo_aquisitivo_id)
+          .eq('id', payload.ferias_saldo_id)
           .single()
 
         if (saldo) {
@@ -187,7 +212,7 @@ export function useFerias() {
           await supabase
             .from('ferias_saldo')
             .update(updatePayload)
-            .eq('id', payload.periodo_aquisitivo_id)
+            .eq('id', payload.ferias_saldo_id)
         }
       }
 

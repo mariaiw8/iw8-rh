@@ -2,6 +2,9 @@
 -- IW8 RH - ETAPA 2: SQL para Ferias, Ocorrencias e Calendario
 -- Execute no Supabase SQL Editor
 -- =====================================================
+-- NOTA: Este script e idempotente - pode ser executado
+-- multiplas vezes sem causar erros.
+-- =====================================================
 
 -- =====================================================
 -- 1. TABELA: tipos_ocorrencia
@@ -11,20 +14,22 @@ CREATE TABLE IF NOT EXISTS tipos_ocorrencia (
   titulo text NOT NULL,
   categoria text NOT NULL DEFAULT 'Outro',
   cor text NOT NULL DEFAULT '#3B82F6',
+  ativo boolean NOT NULL DEFAULT true,
   created_at timestamptz DEFAULT now()
 );
 
--- Remover constraint antiga (se existir) e recriar com valores corretos
+-- Corrigir categorias existentes que possam ter acentos ou variantes
+-- IMPORTANTE: fazer UPDATE antes de adicionar constraint
+UPDATE tipos_ocorrencia SET categoria = 'Remuneracao' WHERE categoria IN ('Remuneração', 'remuneracao', 'remuneração') AND categoria != 'Remuneracao';
+UPDATE tipos_ocorrencia SET categoria = 'Ausencia' WHERE categoria IN ('Ausência', 'ausencia', 'ausência') AND categoria != 'Ausencia';
+UPDATE tipos_ocorrencia SET categoria = 'Beneficio' WHERE categoria IN ('Benefício', 'beneficio', 'benefício') AND categoria != 'Beneficio';
+UPDATE tipos_ocorrencia SET categoria = 'Disciplinar' WHERE categoria IN ('disciplinar') AND categoria != 'Disciplinar';
+UPDATE tipos_ocorrencia SET categoria = 'Outro' WHERE categoria NOT IN ('Remuneracao', 'Ausencia', 'Disciplinar', 'Beneficio', 'Outro');
+
+-- Agora sim, remover e recriar constraint
 ALTER TABLE tipos_ocorrencia DROP CONSTRAINT IF EXISTS tipos_ocorrencia_categoria_check;
 ALTER TABLE tipos_ocorrencia ADD CONSTRAINT tipos_ocorrencia_categoria_check
   CHECK (categoria IN ('Remuneracao', 'Ausencia', 'Disciplinar', 'Beneficio', 'Outro'));
-
--- Corrigir categorias existentes que possam ter acentos
-UPDATE tipos_ocorrencia SET categoria = 'Remuneracao' WHERE categoria IN ('Remuneração', 'remuneracao', 'remuneração');
-UPDATE tipos_ocorrencia SET categoria = 'Ausencia' WHERE categoria IN ('Ausência', 'ausencia', 'ausência');
-UPDATE tipos_ocorrencia SET categoria = 'Beneficio' WHERE categoria IN ('Benefício', 'beneficio', 'benefício');
-UPDATE tipos_ocorrencia SET categoria = 'Disciplinar' WHERE categoria IN ('disciplinar');
-UPDATE tipos_ocorrencia SET categoria = 'Outro' WHERE categoria NOT IN ('Remuneracao', 'Ausencia', 'Disciplinar', 'Beneficio', 'Outro');
 
 -- Tipos padrao (insere apenas se a tabela estiver vazia)
 INSERT INTO tipos_ocorrencia (titulo, categoria, cor)
@@ -52,15 +57,16 @@ WHERE NOT EXISTS (SELECT 1 FROM tipos_ocorrencia LIMIT 1);
 CREATE TABLE IF NOT EXISTS ferias_saldo (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   funcionario_id uuid NOT NULL REFERENCES funcionarios(id) ON DELETE CASCADE,
-  periodo_inicio date NOT NULL,
-  periodo_fim date NOT NULL,
+  periodo_aquisitivo_inicio date NOT NULL,
+  periodo_aquisitivo_fim date NOT NULL,
   dias_direito integer NOT NULL DEFAULT 30,
   dias_gozados integer NOT NULL DEFAULT 0,
   dias_vendidos integer NOT NULL DEFAULT 0,
   dias_restantes integer GENERATED ALWAYS AS (dias_direito - dias_gozados - dias_vendidos) STORED,
   data_vencimento date NOT NULL,
-  status text NOT NULL DEFAULT 'Disponivel',
+  status text NOT NULL DEFAULT 'Disponível',
   created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
 
   CONSTRAINT chk_dias_vendidos CHECK (dias_vendidos >= 0 AND dias_vendidos <= 10),
   CONSTRAINT chk_dias_gozados CHECK (dias_gozados >= 0),
@@ -81,7 +87,7 @@ CREATE TABLE IF NOT EXISTS ferias (
   dias integer NOT NULL,
   tipo text NOT NULL DEFAULT 'Individual' CHECK (tipo IN ('Individual', 'Coletiva')),
   status text NOT NULL DEFAULT 'Programada' CHECK (status IN ('Programada', 'Em Andamento', 'Concluida', 'Cancelada')),
-  periodo_aquisitivo_id uuid REFERENCES ferias_saldo(id) ON DELETE SET NULL,
+  ferias_saldo_id uuid REFERENCES ferias_saldo(id) ON DELETE SET NULL,
   abono_pecuniario boolean DEFAULT false,
   dias_vendidos integer DEFAULT 0,
   observacao text,
@@ -162,8 +168,9 @@ BEGIN
   ELSIF NEW.dias_gozados > 0 OR NEW.dias_vendidos > 0 THEN
     NEW.status := 'Parcial';
   ELSE
-    NEW.status := 'Disponivel';
+    NEW.status := 'Disponível';
   END IF;
+  NEW.updated_at := now();
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -176,7 +183,6 @@ CREATE TRIGGER trg_ferias_saldo_status
 
 -- =====================================================
 -- 8. FUNCAO: Atualizar status das ferias automaticamente
---    (Programada -> Em Andamento -> Concluida)
 -- =====================================================
 CREATE OR REPLACE FUNCTION fn_atualizar_status_ferias()
 RETURNS void AS $$
@@ -205,11 +211,12 @@ $$ LANGUAGE plpgsql;
 -- =====================================================
 CREATE OR REPLACE VIEW vw_ferias_a_vencer AS
 SELECT
-  fs.id,
+  fs.id AS saldo_id,
   fs.funcionario_id,
-  f.nome_completo AS nome,
+  f.nome_completo,
   f.codigo,
-  TO_CHAR(fs.periodo_inicio, 'DD/MM/YYYY') || ' a ' || TO_CHAR(fs.periodo_fim, 'DD/MM/YYYY') AS periodo_aquisitivo,
+  fs.periodo_aquisitivo_inicio,
+  fs.periodo_aquisitivo_fim,
   fs.dias_restantes,
   fs.data_vencimento,
   (fs.data_vencimento - CURRENT_DATE) AS dias_para_vencer,
@@ -235,9 +242,9 @@ ORDER BY
 -- =====================================================
 CREATE OR REPLACE VIEW vw_proximas_ferias AS
 SELECT
-  fer.id,
+  fer.id AS ferias_id,
   fer.funcionario_id,
-  f.nome_completo AS nome,
+  f.nome_completo,
   f.codigo,
   u.titulo AS unidade,
   s.titulo AS setor,
@@ -260,12 +267,14 @@ CREATE OR REPLACE VIEW vw_calendario AS
 SELECT
   fer.id,
   'Ferias - ' || f.nome_completo AS titulo,
-  'ferias'::text AS tipo,
+  'ferias'::text AS tipo_evento,
   f.nome_completo AS funcionario_nome,
+  fer.funcionario_id,
   fer.data_inicio,
   fer.data_fim,
   fer.dias,
-  '#F5AF00' AS cor
+  '#F5AF00' AS cor,
+  fer.observacao AS descricao
 FROM ferias fer
 JOIN funcionarios f ON f.id = fer.funcionario_id
 WHERE fer.status != 'Cancelada'
@@ -275,12 +284,14 @@ UNION ALL
 SELECT
   o.id,
   t.titulo || ' - ' || f.nome_completo AS titulo,
-  'ocorrencia'::text AS tipo,
+  'ocorrencia'::text AS tipo_evento,
   f.nome_completo AS funcionario_nome,
+  o.funcionario_id,
   o.data_inicio,
   COALESCE(o.data_fim, o.data_inicio) AS data_fim,
   o.dias,
-  t.cor
+  t.cor,
+  o.descricao
 FROM ocorrencias o
 JOIN funcionarios f ON f.id = o.funcionario_id
 JOIN tipos_ocorrencia t ON t.id = o.tipo_ocorrencia_id
@@ -290,12 +301,14 @@ UNION ALL
 SELECT
   fc.id,
   'Coletivas: ' || fc.titulo AS titulo,
-  'ferias_coletivas'::text AS tipo,
+  'ferias_coletivas'::text AS tipo_evento,
   NULL AS funcionario_nome,
+  NULL AS funcionario_id,
   fc.data_inicio,
   fc.data_fim,
   fc.dias,
-  '#E57B25' AS cor
+  '#E57B25' AS cor,
+  fc.observacao AS descricao
 FROM ferias_coletivas fc;
 
 -- =====================================================
@@ -303,16 +316,18 @@ FROM ferias_coletivas fc;
 -- =====================================================
 CREATE OR REPLACE VIEW vw_resumo_setores AS
 SELECT
-  s.id,
-  s.titulo,
+  s.id AS setor_id,
+  s.titulo AS setor,
   s.tipo,
   s.unidade_id,
   u.titulo AS unidade_titulo,
-  COUNT(f.id) AS num_funcionarios
+  COUNT(f.id) AS num_funcionarios,
+  s.ativo
 FROM setores s
 LEFT JOIN unidades u ON u.id = s.unidade_id
 LEFT JOIN funcionarios f ON f.setor_id = s.id AND f.status = 'Ativo'
-GROUP BY s.id, s.titulo, s.tipo, s.unidade_id, u.titulo
+WHERE s.ativo = true
+GROUP BY s.id, s.titulo, s.tipo, s.unidade_id, u.titulo, s.ativo
 ORDER BY s.titulo;
 
 -- =====================================================
@@ -358,12 +373,12 @@ BEGIN
 
       EXIT WHEN periodo_start > CURRENT_DATE;
 
-      INSERT INTO ferias_saldo (funcionario_id, periodo_inicio, periodo_fim, dias_direito, data_vencimento)
+      INSERT INTO ferias_saldo (funcionario_id, periodo_aquisitivo_inicio, periodo_aquisitivo_fim, dias_direito, data_vencimento)
       SELECT rec.id, periodo_start::date, periodo_end::date, 30, vencimento::date
       WHERE NOT EXISTS (
         SELECT 1 FROM ferias_saldo
         WHERE funcionario_id = rec.id
-          AND periodo_inicio = periodo_start::date
+          AND periodo_aquisitivo_inicio = periodo_start::date
       );
 
       ano_count := ano_count + 1;

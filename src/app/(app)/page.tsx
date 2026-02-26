@@ -79,8 +79,8 @@ export default function DashboardPage() {
         ocorrenciasMes: ocorrenciasRes.count || 0,
         feriasVencer: feriasVencerRes.count || 0,
         proximasFerias: (proximasFeriasRes.data || []).map((f: Record<string, string>) => ({
-          id: f.id || f.funcionario_id,
-          nome: f.nome || f.funcionario_nome,
+          id: f.ferias_id || f.id || f.funcionario_id,
+          nome: f.nome_completo || f.nome || f.funcionario_nome,
           inicio: f.data_inicio || f.inicio,
           fim: f.data_fim || f.fim,
         })),

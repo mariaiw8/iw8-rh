@@ -77,7 +77,7 @@ export default function FeriasPage() {
       data_fim: data.data_fim,
       dias: data.dias,
       tipo: data.tipo,
-      periodo_aquisitivo_id: data.periodo_aquisitivo_id || undefined,
+      ferias_saldo_id: data.ferias_saldo_id || undefined,
       abono_pecuniario: data.abono_pecuniario,
       dias_vendidos: data.dias_vendidos,
       observacao: data.observacao || undefined,
@@ -169,7 +169,7 @@ export default function FeriasPage() {
                       : ''
                   }
                 >
-                  <TableCell className="font-medium">{f.nome}</TableCell>
+                  <TableCell className="font-medium">{f.nome_completo}</TableCell>
                   <TableCell>{f.codigo || '-'}</TableCell>
                   <TableCell>{f.periodo_aquisitivo}</TableCell>
                   <TableCell>{f.dias_restantes}</TableCell>
@@ -227,7 +227,7 @@ export default function FeriasPage() {
             <TableBody>
               {proximasFerias.map((f) => (
                 <TableRow key={f.id}>
-                  <TableCell className="font-medium">{f.nome}</TableCell>
+                  <TableCell className="font-medium">{f.nome_completo}</TableCell>
                   <TableCell>{f.codigo || '-'}</TableCell>
                   <TableCell>{f.unidade || '-'}</TableCell>
                   <TableCell>{f.setor || '-'}</TableCell>

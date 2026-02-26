@@ -30,7 +30,7 @@ export function useCalendario() {
         return viewData.map((e: Record<string, unknown>) => ({
           id: e.id as string,
           titulo: (e.titulo || e.nome || '') as string,
-          tipo: (e.tipo || 'ferias') as CalendarioEvento['tipo'],
+          tipo: (e.tipo_evento || e.tipo || 'ferias') as CalendarioEvento['tipo'],
           funcionario_nome: (e.funcionario_nome || e.nome || '') as string,
           data_inicio: (e.data_inicio || e.inicio) as string,
           data_fim: (e.data_fim || e.fim) as string,

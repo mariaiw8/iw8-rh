@@ -23,7 +23,7 @@ export interface FeriasFormData {
   data_fim: string
   dias: number
   tipo: string
-  periodo_aquisitivo_id?: string
+  ferias_saldo_id?: string
   abono_pecuniario: boolean
   dias_vendidos: number
   observacao: string
@@ -41,7 +41,7 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
     data_fim: '',
     dias: 0,
     tipo: 'Individual',
-    periodo_aquisitivo_id: '',
+    ferias_saldo_id: '',
     abono_pecuniario: false,
     dias_vendidos: 0,
     observacao: '',
@@ -88,15 +88,15 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
   async function loadSaldos(funcId: string) {
     const { data } = await supabase
       .from('ferias_saldo')
-      .select('id, periodo_inicio, periodo_fim, dias_restantes')
+      .select('id, periodo_aquisitivo_inicio, periodo_aquisitivo_fim, dias_restantes')
       .eq('funcionario_id', funcId)
       .gt('dias_restantes', 0)
-      .order('periodo_inicio')
+      .order('periodo_aquisitivo_inicio')
 
     setSaldos(
       (data || []).map((s: Record<string, unknown>) => ({
         id: s.id as string,
-        periodo: `${(s.periodo_inicio as string).slice(0, 10)} a ${(s.periodo_fim as string).slice(0, 10)}`,
+        periodo: `${(s.periodo_aquisitivo_inicio as string).slice(0, 10)} a ${(s.periodo_aquisitivo_fim as string).slice(0, 10)}`,
         dias_restantes: s.dias_restantes as number,
       }))
     )
@@ -114,7 +114,7 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
         data_fim: '',
         dias: 0,
         tipo: 'Individual',
-        periodo_aquisitivo_id: '',
+        ferias_saldo_id: '',
         abono_pecuniario: false,
         dias_vendidos: 0,
         observacao: '',
@@ -180,8 +180,8 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
         {saldos.length > 0 && (
           <Select
             label="Periodo Aquisitivo"
-            value={form.periodo_aquisitivo_id || ''}
-            onChange={(e) => setForm({ ...form, periodo_aquisitivo_id: e.target.value })}
+            value={form.ferias_saldo_id || ''}
+            onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value })}
             options={saldos.map((s) => ({
               value: s.id,
               label: `${s.periodo} (${s.dias_restantes} dias restantes)`,

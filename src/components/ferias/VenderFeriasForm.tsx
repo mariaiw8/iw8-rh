@@ -53,7 +53,7 @@ export function VenderFeriasForm({ open, onClose, saldos, onSubmit }: VenderFeri
           onChange={(e) => setPeriodoId(e.target.value)}
           options={saldosDisponiveis.map((s) => ({
             value: s.id,
-            label: `${s.periodo_inicio.slice(0, 10)} a ${s.periodo_fim.slice(0, 10)} — ${s.dias_restantes} dias restantes (${s.dias_vendidos || 0} ja vendidos)`,
+            label: `${s.periodo_aquisitivo_inicio.slice(0, 10)} a ${s.periodo_aquisitivo_fim.slice(0, 10)} — ${s.dias_restantes} dias restantes (${s.dias_vendidos || 0} ja vendidos)`,
           }))}
           placeholder="Selecione o periodo"
         />
