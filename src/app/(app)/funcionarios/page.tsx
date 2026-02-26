@@ -91,7 +91,7 @@ export default function FuncionariosPage() {
         const tableRes = await supabase
           .from('funcionarios')
           .select('*, unidades(id, titulo), setores(id, titulo), funcoes(id, titulo)')
-          .order('nome')
+          .order('nome_completo')
         funcData = (tableRes.data || []).map((f: Record<string, unknown>) => ({
           id: f.id as string,
           nome: (f.nome_completo || f.nome) as string,

@@ -54,21 +54,12 @@ const setorSchema = z.object({
 const funcaoSchema = z.object({
   titulo: z.string().min(1, 'Titulo obrigatorio'),
   cbo: z.string().optional(),
-  descricao_cbo: z.string().optional(),
-  nivel_id: z.string().optional(),
-  responde_a: z.string().optional(),
   setor_id: z.string().min(1, 'Setor obrigatorio'),
-})
-
-const nivelSchema = z.object({
-  numero: z.string().min(1, 'Numero obrigatorio'),
-  descricao: z.string().min(1, 'Descricao obrigatoria'),
 })
 
 type UnidadeForm = z.infer<typeof unidadeSchema>
 type SetorForm = z.infer<typeof setorSchema>
 type FuncaoForm = z.infer<typeof funcaoSchema>
-type NivelForm = z.infer<typeof nivelSchema>
 
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11)
@@ -156,7 +147,6 @@ function CadastrosPage() {
   const [unidades, setUnidades] = useState<Record<string, unknown>[]>([])
   const [setores, setSetores] = useState<Record<string, unknown>[]>([])
   const [funcoes, setFuncoes] = useState<Record<string, unknown>[]>([])
-  const [niveis, setNiveis] = useState<Record<string, unknown>[]>([])
 
   // Modal states
   const [modalOpen, setModalOpen] = useState(false)
@@ -170,11 +160,10 @@ function CadastrosPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [uniRes, setRes, funRes, nivRes] = await Promise.all([
+      const [uniRes, setRes, funRes] = await Promise.all([
         supabase.from('vw_resumo_unidades').select('*').order('titulo'),
         supabase.from('vw_resumo_setores').select('*').order('titulo'),
-        supabase.from('funcoes').select('*, setores(titulo), niveis(numero, descricao)').order('titulo'),
-        supabase.from('niveis').select('*').order('numero'),
+        supabase.from('funcoes').select('*, setores(titulo)').order('titulo'),
       ])
 
       // If views don't exist, fall back to base tables
@@ -208,11 +197,6 @@ function CadastrosPage() {
         setFuncoes(fallback.data || [])
       } else {
         setFuncoes(funRes.data || [])
-      }
-
-      // Load niveis (may not exist yet)
-      if (!nivRes.error) {
-        setNiveis(nivRes.data || [])
       }
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
@@ -328,8 +312,8 @@ function CadastrosPage() {
               className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm text-cinza-preto bg-white focus:outline-none focus:ring-2 focus:ring-laranja"
             >
               <option value="">Todos os Tipos</option>
-              <option value="Escritorio">Escritorio</option>
-              <option value="Producao">Producao</option>
+              <option value="Escritório">Escritório</option>
+              <option value="Produção">Produção</option>
             </select>
             {(setorFilterUnidade || setorFilterTipo) && (
               <button
@@ -377,7 +361,7 @@ function CadastrosPage() {
               <SetoresTable data={filteredSetores} onEdit={openEdit} onDelete={(id) => handleDelete('setores', id)} />
             )}
             {tab === 'funcoes' && (
-              <FuncoesTable data={filteredFuncoes} allFuncoes={funcoes} onEdit={openEdit} onDelete={(id) => handleDelete('funcoes', id)} />
+              <FuncoesTable data={filteredFuncoes} onEdit={openEdit} onDelete={(id) => handleDelete('funcoes', id)} />
             )}
           </>
         )}
@@ -413,8 +397,6 @@ function CadastrosPage() {
           supabase={supabase}
           onSaved={() => { setModalOpen(false); loadData() }}
           setores={setores}
-          funcoes={funcoes}
-          niveis={niveis}
         />
       )}
     </PageContainer>
@@ -474,7 +456,7 @@ function SetoresTable({ data, onEdit, onDelete }: { data: Record<string, unknown
               <TableCell className="font-medium">{s.titulo as string}</TableCell>
               <TableCell>
                 {s.tipo ? (
-                  <Badge variant={(s.tipo as string) === 'Producao' ? 'warning' : 'info'}>
+                  <Badge variant={(s.tipo as string) === 'Produção' ? 'warning' : 'info'}>
                     {s.tipo as string}
                   </Badge>
                 ) : '-'}
@@ -505,29 +487,14 @@ function SetoresTable({ data, onEdit, onDelete }: { data: Record<string, unknown
   )
 }
 
-function FuncoesTable({ data, allFuncoes, onEdit, onDelete }: { data: Record<string, unknown>[]; allFuncoes: Record<string, unknown>[]; onEdit: (id: string) => void; onDelete: (id: string) => void }) {
+function FuncoesTable({ data, onEdit, onDelete }: { data: Record<string, unknown>[]; onEdit: (id: string) => void; onDelete: (id: string) => void }) {
   if (data.length === 0) return <EmptyState title="Nenhuma funcao cadastrada" description="Clique em 'Nova Funcao' para criar" />
-
-  function getNivelDisplay(f: Record<string, unknown>) {
-    const nivel = f.niveis as Record<string, unknown> | null
-    if (nivel && nivel.numero != null) return `${nivel.numero} - ${nivel.descricao || ''}`
-    return '-'
-  }
-
-  function getRespondeA(f: Record<string, unknown>) {
-    if (!f.responde_a) return '-'
-    const parent = allFuncoes.find((fn) => fn.id === f.responde_a)
-    return (parent?.titulo as string) || '-'
-  }
 
   return (
     <Table>
       <TableHeader>
         <TableHead>Titulo</TableHead>
         <TableHead>CBO</TableHead>
-        <TableHead>Descricao CBO</TableHead>
-        <TableHead>Nivel</TableHead>
-        <TableHead>Responde a</TableHead>
         <TableHead>Setor</TableHead>
         <TableHead className="w-24">Acoes</TableHead>
       </TableHeader>
@@ -536,9 +503,6 @@ function FuncoesTable({ data, allFuncoes, onEdit, onDelete }: { data: Record<str
           <TableRow key={f.id as string}>
             <TableCell className="font-medium">{f.titulo as string}</TableCell>
             <TableCell>{(f.cbo as string) || '-'}</TableCell>
-            <TableCell>{(f.descricao_cbo as string) || '-'}</TableCell>
-            <TableCell>{getNivelDisplay(f)}</TableCell>
-            <TableCell>{getRespondeA(f)}</TableCell>
             <TableCell>{(f.setor_titulo as string) || ((f.setores as Record<string, string>)?.titulo) || '-'}</TableCell>
             <TableCell>
               <div className="flex gap-1">
@@ -771,8 +735,8 @@ function SetorModal({
             label="Tipo"
             {...register('tipo')}
             options={[
-              { value: 'Escritorio', label: 'Escritorio' },
-              { value: 'Producao', label: 'Producao' },
+              { value: 'Escritório', label: 'Escritório' },
+              { value: 'Produção', label: 'Produção' },
             ]}
             placeholder="Selecione"
           />
@@ -827,204 +791,64 @@ function SetorModal({
 }
 
 function FuncaoModal({
-  open, onClose, editingId, supabase, onSaved, setores, funcoes, niveis,
+  open, onClose, editingId, supabase, onSaved, setores,
 }: {
   open: boolean; onClose: () => void; editingId: string | null
   supabase: ReturnType<typeof createClient>; onSaved: () => void
-  setores: Record<string, unknown>[]; funcoes: Record<string, unknown>[]
-  niveis: Record<string, unknown>[]
+  setores: Record<string, unknown>[]
 }) {
-  const [showNivelForm, setShowNivelForm] = useState(false)
-  const [localNiveis, setLocalNiveis] = useState(niveis)
-
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<FuncaoForm>({
     resolver: zodResolver(funcaoSchema),
   })
 
-  const nivelForm = useForm<NivelForm>({
-    resolver: zodResolver(nivelSchema),
-  })
-
-  useEffect(() => {
-    setLocalNiveis(niveis)
-  }, [niveis])
-
   useEffect(() => {
     if (open) {
-      setShowNivelForm(false)
       if (editingId) {
-        // Fetch full record from funcoes table
         supabase.from('funcoes').select('*').eq('id', editingId).single().then(({ data }) => {
           if (data) {
             reset({
               titulo: (data.titulo as string) || '',
               cbo: (data.cbo as string) || '',
-              descricao_cbo: (data.descricao_cbo as string) || '',
-              nivel_id: (data.nivel_id as string) || '',
-              responde_a: (data.responde_a as string) || '',
               setor_id: (data.setor_id as string) || '',
             })
           }
         })
       } else {
-        reset({ titulo: '', cbo: '', descricao_cbo: '', nivel_id: '', responde_a: '', setor_id: '' })
+        reset({ titulo: '', cbo: '', setor_id: '' })
       }
     }
   }, [open, editingId, supabase, reset])
 
   async function onSubmit(data: FuncaoForm) {
-    const payload: Record<string, unknown> = {
+    const payload = {
       titulo: data.titulo,
       cbo: data.cbo || null,
-      descricao_cbo: data.descricao_cbo || null,
-      nivel_id: data.nivel_id || null,
-      responde_a: data.responde_a || null,
       setor_id: data.setor_id,
     }
 
     if (editingId) {
       const { error } = await supabase.from('funcoes').update(payload).eq('id', editingId)
-      if (error) {
-        // If new columns don't exist yet, try without them
-        if (error.message.includes('descricao_cbo') || error.message.includes('nivel_id') || error.message.includes('responde_a')) {
-          const fallbackPayload: Record<string, unknown> = { titulo: data.titulo, cbo: data.cbo || null, setor_id: data.setor_id }
-          if (!error.message.includes('descricao_cbo')) fallbackPayload.descricao_cbo = data.descricao_cbo || null
-          if (!error.message.includes('nivel_id')) fallbackPayload.nivel_id = data.nivel_id || null
-          if (!error.message.includes('responde_a')) fallbackPayload.responde_a = data.responde_a || null
-          const { error: retryError } = await supabase.from('funcoes').update(fallbackPayload).eq('id', editingId)
-          if (retryError) { toast.error('Erro: ' + retryError.message); return }
-        } else {
-          toast.error('Erro: ' + error.message); return
-        }
-      }
+      if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Funcao atualizada')
     } else {
       const { error } = await supabase.from('funcoes').insert(payload)
-      if (error) {
-        if (error.message.includes('descricao_cbo') || error.message.includes('nivel_id') || error.message.includes('responde_a')) {
-          const fallbackPayload: Record<string, unknown> = { titulo: data.titulo, cbo: data.cbo || null, setor_id: data.setor_id }
-          const { error: retryError } = await supabase.from('funcoes').insert(fallbackPayload)
-          if (retryError) { toast.error('Erro: ' + retryError.message); return }
-        } else {
-          toast.error('Erro: ' + error.message); return
-        }
-      }
+      if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Funcao criada')
     }
     onSaved()
   }
 
-  async function handleCreateNivel(data: NivelForm) {
-    const { data: result, error } = await supabase.from('niveis').insert({ numero: parseInt(data.numero, 10), descricao: data.descricao }).select().single()
-    if (error) {
-      toast.error('Erro ao criar nivel: ' + error.message)
-      return
-    }
-    toast.success('Nivel criado')
-    setLocalNiveis([...localNiveis, result])
-    setShowNivelForm(false)
-    nivelForm.reset()
-  }
-
-  async function handleDeleteNivel(id: string) {
-    if (!confirm('Tem certeza que deseja excluir este nivel?')) return
-    const { error } = await supabase.from('niveis').delete().eq('id', id)
-    if (error) {
-      toast.error('Erro ao excluir nivel: ' + error.message)
-      return
-    }
-    setLocalNiveis(localNiveis.filter((n) => n.id !== id))
-    toast.success('Nivel excluido')
-  }
-
-  // Other funcoes (excluding current) for "Responde a" dropdown
-  const otherFuncoes = funcoes.filter((f) => f.id !== editingId)
-
   return (
-    <Modal open={open} onClose={onClose} title={editingId ? 'Editar Funcao' : 'Nova Funcao'} size="lg">
+    <Modal open={open} onClose={onClose} title={editingId ? 'Editar Funcao' : 'Nova Funcao'}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Input label="Titulo *" {...register('titulo')} error={errors.titulo?.message} />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Input label="CBO" {...register('cbo')} />
-          <Input label="Descricao CBO" {...register('descricao_cbo')} />
-        </div>
+        <Input label="CBO" {...register('cbo')} />
         <Select
           label="Setor *"
           {...register('setor_id')}
           error={errors.setor_id?.message}
           options={setores.map((s) => ({ value: s.id as string, label: s.titulo as string }))}
           placeholder="Selecione"
-        />
-
-        {/* Nivel */}
-        <div>
-          <div className="flex items-end gap-2">
-            <div className="flex-1">
-              <Select
-                label="Nivel"
-                {...register('nivel_id')}
-                options={localNiveis.map((n) => ({
-                  value: n.id as string,
-                  label: `${n.numero} - ${n.descricao || ''}`,
-                }))}
-                placeholder="Selecione"
-              />
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowNivelForm(!showNivelForm)}
-              className="mb-0.5"
-            >
-              <Plus size={14} /> {showNivelForm ? 'Fechar' : 'Novo Nivel'}
-            </Button>
-          </div>
-          {showNivelForm && (
-            <div className="mt-2 p-3 border border-gray-200 rounded-lg bg-gray-50 space-y-3">
-              <h4 className="text-sm font-semibold text-cinza-preto">Novo Nivel</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <Input
-                  label="Numero *"
-                  type="number"
-                  {...nivelForm.register('numero')}
-                  error={nivelForm.formState.errors.numero?.message}
-                />
-                <Input
-                  label="Descricao *"
-                  {...nivelForm.register('descricao')}
-                  error={nivelForm.formState.errors.descricao?.message}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="ghost" size="sm" onClick={() => { setShowNivelForm(false); nivelForm.reset() }}>Cancelar</Button>
-                <Button type="button" size="sm" onClick={nivelForm.handleSubmit(handleCreateNivel)}>Criar Nivel</Button>
-              </div>
-              {localNiveis.length > 0 && (
-                <div className="mt-2 border-t border-gray-200 pt-2">
-                  <p className="text-xs font-semibold text-cinza-estrutural mb-1">Niveis cadastrados:</p>
-                  <div className="space-y-1">
-                    {localNiveis.map((n) => (
-                      <div key={n.id as string} className="flex items-center justify-between text-sm">
-                        <span>{n.numero as number} - {n.descricao as string}</span>
-                        <button type="button" onClick={() => handleDeleteNivel(n.id as string)} className="p-1 text-red-500 hover:bg-red-50 rounded">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Responde a (hierarquia) */}
-        <Select
-          label="Responde a"
-          {...register('responde_a')}
-          options={otherFuncoes.map((f) => ({ value: f.id as string, label: f.titulo as string }))}
-          placeholder="Nenhum (opcional)"
         />
 
         <div className="flex justify-end gap-3 pt-4">
