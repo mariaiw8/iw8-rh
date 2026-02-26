@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+  --font-sans: "DM Sans", system-ui, sans-serif;
   --color-laranja: #E57B25;
   --color-laranja-escuro: #CC6716;
   --color-laranja-claro: #F0A756;
