@@ -225,30 +225,78 @@ export default function FuncionarioDetailPage() {
       if (fotoFile) {
         const ext = fotoFile.name.split('.').pop()
         const path = `fotos/${id}.${ext}`
+        // Remove existing file first to avoid RLS insert conflicts
+        await supabase.storage.from('arquivos-rh').remove([path])
         const { error: uploadError } = await supabase.storage
           .from('arquivos-rh')
-          .upload(path, fotoFile, { upsert: true })
+          .upload(path, fotoFile, { upsert: true, cacheControl: '3600' })
         if (uploadError) {
-          toast.error('Erro no upload da foto: ' + uploadError.message)
+          // Fallback: try with a timestamped path
+          const tsPath = `fotos/${id}_${Date.now()}.${ext}`
+          const { error: retryError } = await supabase.storage
+            .from('arquivos-rh')
+            .upload(tsPath, fotoFile, { cacheControl: '3600' })
+          if (retryError) {
+            toast.error('Erro no upload da foto: ' + retryError.message)
+          } else {
+            const { data: urlData } = supabase.storage.from('arquivos-rh').getPublicUrl(tsPath)
+            fotoUrl = urlData.publicUrl
+          }
         } else {
           const { data: urlData } = supabase.storage.from('arquivos-rh').getPublicUrl(path)
           fotoUrl = urlData.publicUrl
         }
       }
 
-      const { filhos, nome, ...restData } = data
-      const payload = {
-        ...restData,
+      const { filhos, nome, conjuge_nascimento, conjuge_nome, ...restData } = data
+      const basePayload: Record<string, unknown> = {
         nome_completo: nome,
         foto_url: fotoUrl || null,
+        codigo: restData.codigo || null,
+        data_nascimento: restData.data_nascimento || null,
+        cpf: restData.cpf || null,
+        rg: restData.rg || null,
+        carteira_trabalho: restData.carteira_trabalho || null,
+        cnh: restData.cnh || null,
+        estado_civil: restData.estado_civil || null,
+        tamanho_camiseta: restData.tamanho_camiseta || null,
+        tamanho_calca: restData.tamanho_calca || null,
+        numero_sapato: restData.numero_sapato || null,
+        endereco: restData.endereco || null,
+        cidade: restData.cidade || null,
+        estado: restData.estado || null,
+        cep: restData.cep || null,
+        telefone1_descricao: restData.telefone1_descricao || null,
+        telefone1: restData.telefone1 || null,
+        telefone2_descricao: restData.telefone2_descricao || null,
+        telefone2: restData.telefone2 || null,
+        telefone3_descricao: restData.telefone3_descricao || null,
+        telefone3: restData.telefone3 || null,
         unidade_id: restData.unidade_id || null,
         setor_id: restData.setor_id || null,
         funcao_id: restData.funcao_id || null,
+        data_admissao: restData.data_admissao || null,
         data_desligamento: restData.data_desligamento || null,
         motivo_desligamento: restData.data_desligamento ? restData.motivo_desligamento : null,
+        seg_qui_entrada: restData.seg_qui_entrada || null,
+        seg_qui_almoco_inicio: restData.seg_qui_almoco_inicio || null,
+        seg_qui_almoco_fim: restData.seg_qui_almoco_fim || null,
+        seg_qui_saida: restData.seg_qui_saida || null,
+        sexta_entrada: restData.sexta_entrada || null,
+        sexta_almoco_inicio: restData.sexta_almoco_inicio || null,
+        sexta_almoco_fim: restData.sexta_almoco_fim || null,
+        sexta_saida: restData.sexta_saida || null,
+        conjuge_nome: conjuge_nome || null,
       }
 
-      const { error } = await supabase.from('funcionarios').update(payload).eq('id', id)
+      // Try saving with conjuge_nascimento first, fallback without it
+      const fullPayload: Record<string, unknown> = { ...basePayload, conjuge_nascimento: conjuge_nascimento || null }
+      let { error } = await supabase.from('funcionarios').update(fullPayload).eq('id', id)
+      if (error?.message?.includes('conjuge_nascimento')) {
+        // Column doesn't exist yet, save without it
+        const retry = await supabase.from('funcionarios').update(basePayload).eq('id', id)
+        error = retry.error
+      }
       if (error) {
         toast.error('Erro ao salvar: ' + error.message)
         return
