@@ -37,7 +37,7 @@ export default function LoginPage() {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
         <div className="flex flex-col items-center mb-8">
           <img
-            src="https://xrdrdpbhcygpnrmnjpjq.supabase.co/storage/v1/object/public/arquivos-rh/Logo%20IW8%20Sem%20Fundo%20PNG.png"
+            src="https://xrdrdpbhcygpnrmnjpjq.supabase.co/storage/v1/object/public/arquivos-rh/IW8_brancalaranja.png"
             alt="IW8"
             className="h-20 w-20 mb-4 bg-azul-noturno rounded-xl p-2 object-contain"
           />
