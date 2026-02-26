@@ -463,9 +463,14 @@ export default function FuncionarioDetailPage() {
                 </Button>
               </>
             ) : (
-              <Button type="button" onClick={() => setEditing(true)}>
-                <Pencil size={16} /> Editar
-              </Button>
+              <>
+                <Button type="button" variant="secondary" onClick={() => router.push(`/funcionarios/${id}/financeiro`)}>
+                  <DollarSign size={16} /> Financeiro
+                </Button>
+                <Button type="button" onClick={() => setEditing(true)}>
+                  <Pencil size={16} /> Editar
+                </Button>
+              </>
             )}
           </div>
         </div>

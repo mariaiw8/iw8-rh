@@ -14,6 +14,7 @@ import {
   Briefcase,
   Palmtree,
   ClipboardList,
+  DollarSign,
   LogOut,
   Menu,
   X,
@@ -57,6 +58,11 @@ const navItems: NavItem[] = [
     label: 'Ocorrencias',
     href: '/ocorrencias',
     icon: <ClipboardList size={20} />,
+  },
+  {
+    label: 'Financeiro',
+    href: '/financeiro',
+    icon: <DollarSign size={20} />,
   },
 ]
 
