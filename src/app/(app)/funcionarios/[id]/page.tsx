@@ -22,6 +22,14 @@ import { ptBR } from 'date-fns/locale'
 
 const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viuvo(a)', 'Uniao Estavel']
 
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11)
+  if (digits.length === 0) return ''
+  if (digits.length <= 2) return `(${digits}`
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}
+
 const UFS = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA',
   'PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
@@ -159,7 +167,7 @@ export default function FuncionarioDetailPage() {
       }
 
       reset({
-        nome: f.nome || '',
+        nome: f.nome_completo || f.nome || '',
         codigo: f.codigo || '',
         data_nascimento: f.data_nascimento || '',
         cpf: f.cpf || '',
@@ -228,9 +236,10 @@ export default function FuncionarioDetailPage() {
         }
       }
 
-      const { filhos, ...restData } = data
+      const { filhos, nome, ...restData } = data
       const payload = {
         ...restData,
+        nome_completo: nome,
         foto_url: fotoUrl || null,
         unidade_id: restData.unidade_id || null,
         setor_id: restData.setor_id || null,
@@ -351,12 +360,12 @@ export default function FuncionarioDetailPage() {
                   }}
                 />
               ) : (
-                <Avatar src={fotoPreview} name={funcionario.nome as string} size="xl" />
+                <Avatar src={fotoPreview} name={(funcionario.nome_completo || funcionario.nome) as string} size="xl" />
               )}
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-1">
-                <h2 className="text-xl font-bold text-cinza-preto">{funcionario.nome as string}</h2>
+                <h2 className="text-xl font-bold text-cinza-preto">{(funcionario.nome_completo || funcionario.nome) as string}</h2>
                 <Badge variant={(funcionario.status as string) === 'Ativo' ? 'success' : 'neutral'}>
                   {funcionario.status as string}
                 </Badge>
@@ -458,7 +467,8 @@ export default function FuncionarioDetailPage() {
                     <div className="col-span-2">
                       <Input
                         label={`Telefone ${n}`}
-                        {...register(`telefone${n}` as keyof FuncionarioFormData)}
+                        value={(watch(`telefone${n}` as keyof FuncionarioFormData) as string) || ''}
+                        onChange={(e) => setValue(`telefone${n}` as keyof FuncionarioFormData, formatPhone(e.target.value))}
                         placeholder="(00) 00000-0000"
                         disabled={!editing}
                       />

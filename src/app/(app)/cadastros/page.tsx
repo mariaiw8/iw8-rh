@@ -51,6 +51,14 @@ type UnidadeForm = z.infer<typeof unidadeSchema>
 type SetorForm = z.infer<typeof setorSchema>
 type FuncaoForm = z.infer<typeof funcaoSchema>
 
+function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11)
+  if (digits.length === 0) return ''
+  if (digits.length <= 2) return `(${digits}`
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}
+
 type Tab = 'unidades' | 'setores' | 'funcoes'
 
 export default function CadastrosPageWrapper() {
@@ -344,7 +352,7 @@ function UnidadeModal({
   unidades: Record<string, unknown>[]
 }) {
   const editing = editingId ? unidades.find((u) => u.id === editingId) : null
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<UnidadeForm>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors, isSubmitting } } = useForm<UnidadeForm>({
     resolver: zodResolver(unidadeSchema),
     defaultValues: editing ? {
       titulo: editing.titulo as string,
@@ -376,12 +384,21 @@ function UnidadeModal({
   }, [open, editing, reset])
 
   async function onSubmit(data: UnidadeForm) {
+    const payload = {
+      titulo: data.titulo,
+      cnpj: data.cnpj || null,
+      endereco: data.endereco || null,
+      cidade: data.cidade || null,
+      estado: data.estado || null,
+      cep: data.cep || null,
+      telefone: data.telefone || null,
+    }
     if (editingId) {
-      const { error } = await supabase.from('unidades').update(data).eq('id', editingId)
+      const { error } = await supabase.from('unidades').update(payload).eq('id', editingId)
       if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Unidade atualizada')
     } else {
-      const { error } = await supabase.from('unidades').insert(data)
+      const { error } = await supabase.from('unidades').insert(payload)
       if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Unidade criada')
     }
@@ -404,8 +421,13 @@ function UnidadeModal({
           />
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <Input label="CEP" {...register('cep')} />
-          <Input label="Telefone" {...register('telefone')} />
+          <Input label="CEP" {...register('cep')} placeholder="00000-000" />
+          <Input
+            label="Telefone"
+            value={watch('telefone') || ''}
+            onChange={(e) => setValue('telefone', formatPhone(e.target.value))}
+            placeholder="(00) 00000-0000"
+          />
         </div>
         <div className="flex justify-end gap-3 pt-4">
           <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
@@ -448,7 +470,7 @@ function SetorModal({
   }, [open, editing, reset])
 
   async function onSubmit(data: SetorForm) {
-    const payload = { ...data, unidade_id: data.unidade_id || null }
+    const payload = { ...data, unidade_id: data.unidade_id || null, tipo: data.tipo || null }
     if (editingId) {
       const { error } = await supabase.from('setores').update(payload).eq('id', editingId)
       if (error) { toast.error('Erro: ' + error.message); return }

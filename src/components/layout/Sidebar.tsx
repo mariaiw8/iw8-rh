@@ -85,7 +85,7 @@ export function Sidebar() {
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="flex items-center justify-center h-20 border-b border-white/10">
-        <img src="/logo-iw8-branca.png" alt="IW8" className="h-12" />
+        <img src="https://xrdrdpbhcygpnrmnjpjq.supabase.co/storage/v1/object/public/arquivos-rh/Logo%20IW8%20Sem%20Fundo%20PNG.png" alt="IW8" className="h-12" />
       </div>
 
       {/* Navigation */}
