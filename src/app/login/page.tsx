@@ -36,11 +36,12 @@ export default function LoginPage() {
     <div className="min-h-screen bg-azul-noturno flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
         <div className="flex flex-col items-center mb-8">
-          <img
-            src="/logo-iw8-branca.png"
-            alt="IW8"
-            className="h-20 w-20 mb-4 bg-azul-noturno rounded-xl p-2"
-          />
+          <div className="h-20 w-20 mb-4 bg-azul-noturno rounded-xl flex items-center justify-center">
+            <div className="flex items-center">
+              <span className="text-2xl font-bold text-white tracking-tight">IW</span>
+              <span className="text-2xl font-bold text-laranja tracking-tight">8</span>
+            </div>
+          </div>
           <h1 className="text-2xl font-bold text-cinza-preto">Sistema de RH</h1>
           <p className="text-cinza-estrutural text-sm mt-1">Faça login para acessar</p>
         </div>

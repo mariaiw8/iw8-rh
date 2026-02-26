@@ -94,7 +94,7 @@ export default function FuncionariosPage() {
           .order('nome')
         funcData = (tableRes.data || []).map((f: Record<string, unknown>) => ({
           id: f.id as string,
-          nome: f.nome as string,
+          nome: (f.nome_completo || f.nome) as string,
           codigo: f.codigo as string,
           cpf: f.cpf as string,
           status: (f.status as string) || 'Ativo',
@@ -336,7 +336,7 @@ function NovoFuncionarioModal({
 
   async function onSubmit(data: NovoFuncionarioForm) {
     const payload = {
-      nome: data.nome,
+      nome_completo: data.nome,
       codigo: data.codigo || null,
       cpf: data.cpf || null,
       data_nascimento: data.data_nascimento || null,

@@ -85,7 +85,13 @@ export function Sidebar() {
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="flex items-center justify-center h-20 border-b border-white/10">
-        <img src="/logo-iw8-branca.png" alt="IW8" className="h-12" />
+        <div className="text-center">
+          <div className="flex items-center justify-center">
+            <span className="text-3xl font-bold text-white tracking-tight">IW</span>
+            <span className="text-3xl font-bold text-laranja tracking-tight">8</span>
+          </div>
+          <span className="text-[10px] text-white/60 font-medium tracking-widest">SISTEMA RH</span>
+        </div>
       </div>
 
       {/* Navigation */}
