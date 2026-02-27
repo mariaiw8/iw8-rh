@@ -15,3 +15,90 @@
   --color-cinza-preto: #292929;
   --color-cinza-branco: #F7F7F7;
 }
+
+/* Print styles */
+@media print {
+  /* Hide non-printable elements */
+  aside,
+  header,
+  nav,
+  .print\:hidden,
+  button,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+
+  /* Reset layout for print */
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 12px !important;
+  }
+
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .lg\:ml-64 {
+    margin-left: 0 !important;
+  }
+
+  /* Clean content */
+  .bg-white,
+  .bg-cinza-branco {
+    background: white !important;
+    box-shadow: none !important;
+  }
+
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl {
+    box-shadow: none !important;
+  }
+
+  .rounded-xl,
+  .rounded-lg {
+    border-radius: 0 !important;
+  }
+
+  /* Print logo */
+  .print-logo {
+    display: block !important;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  /* Table styles for print */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  th, td {
+    border: 1px solid #ddd !important;
+    padding: 6px 8px !important;
+    font-size: 11px !important;
+  }
+
+  th {
+    background-color: #f3f4f6 !important;
+    font-weight: bold !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Avoid page breaks inside elements */
+  tr {
+    page-break-inside: avoid;
+  }
+
+  .grid {
+    display: block !important;
+  }
+
+  .grid > * {
+    margin-bottom: 12px;
+  }
+}

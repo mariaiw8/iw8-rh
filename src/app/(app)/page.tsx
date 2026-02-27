@@ -3,16 +3,27 @@
 import { useEffect, useState } from 'react'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { StatCard } from '@/components/dashboard/StatCard'
+import { TurnoverCard } from '@/components/dashboard/TurnoverCard'
+import { AbsenteismoCard } from '@/components/dashboard/AbsenteismoCard'
+import { TempoEmpresaCard } from '@/components/dashboard/TempoEmpresaCard'
+import { CustoMedioCard } from '@/components/dashboard/CustoMedioCard'
+import {
+  TurnoverChart,
+  HeadcountChart,
+  SetorTipoChart,
+  TempoEmpresaChart,
+  OcorrenciasCategoriaChart,
+} from '@/components/dashboard/StrategicCharts'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
 import { Avatar } from '@/components/ui/Avatar'
-import { Badge } from '@/components/ui/Badge'
 import { createClient } from '@/lib/supabase'
-import { Users, Palmtree, AlertTriangle, CalendarClock, Cake, UserPlus } from 'lucide-react'
+import { Users, Palmtree, AlertTriangle, CalendarClock, Cake, UserPlus, BarChart3 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import dynamic from 'next/dynamic'
-import { SetoreChart, AdmissoesChart, OcorrenciasChart } from '@/components/dashboard/Charts'
+import { SetoreChart, AdmissoesChart } from '@/components/dashboard/Charts'
+import { useIndicadores, IndicadoresData } from '@/hooks/useIndicadores'
 
 const DashboardCalendar = dynamic(
   () => import('@/components/dashboard/Calendar').then(mod => ({ default: mod.DashboardCalendar })),
@@ -32,11 +43,27 @@ interface DashboardData {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [indicadores, setIndicadores] = useState<IndicadoresData | null>(null)
+  const [indicadoresLoading, setIndicadoresLoading] = useState(true)
   const supabase = createClient()
+  const { loadIndicadores } = useIndicadores()
 
   useEffect(() => {
     loadDashboard()
+    loadIndicadoresData()
   }, [])
+
+  async function loadIndicadoresData() {
+    setIndicadoresLoading(true)
+    try {
+      const result = await loadIndicadores()
+      setIndicadores(result)
+    } catch (err) {
+      console.error('Erro ao carregar indicadores:', err)
+    } finally {
+      setIndicadoresLoading(false)
+    }
+  }
 
   async function loadDashboard() {
     try {
@@ -64,7 +91,6 @@ export default function DashboardPage() {
         supabase.from('funcionarios').select('id, nome, data_admissao, foto_url').eq('status', 'Ativo').gte('data_admissao', new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]).order('data_admissao', { ascending: false }).limit(5),
       ])
 
-      // Filter aniversariantes by current month
       const aniversariantes = (aniversariantesRes.data || [])
         .filter((f) => {
           if (!f.data_nascimento) return false
@@ -108,7 +134,7 @@ export default function DashboardPage() {
         <p className="text-cinza-estrutural capitalize">{hoje}</p>
       </div>
 
-      {/* Indicadores */}
+      {/* Indicadores Principais */}
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -143,6 +169,22 @@ export default function DashboardPage() {
           />
         </div>
       )}
+
+      {/* Indicadores Avancados */}
+      {indicadoresLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <CardSkeleton key={i} />
+          ))}
+        </div>
+      ) : indicadores ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <TurnoverCard valor={indicadores.turnover} historico={indicadores.turnoverHistorico} />
+          <AbsenteismoCard valor={indicadores.absenteismo} />
+          <TempoEmpresaCard tempo={indicadores.tempoMedioEmpresa} />
+          <CustoMedioCard valor={indicadores.custoMedioPorFuncionario} />
+        </div>
+      ) : null}
 
       {/* Cards adicionais */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -249,6 +291,27 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {/* Indicadores Estrategicos */}
+      {indicadores && !indicadoresLoading && (
+        <>
+          <div className="mt-8 mb-4">
+            <h3 className="text-lg font-bold text-cinza-preto flex items-center gap-2">
+              <BarChart3 size={20} className="text-azul-medio" />
+              Indicadores Estrategicos
+            </h3>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <TurnoverChart data={indicadores.turnoverHistorico} />
+            <HeadcountChart data={indicadores.headcountHistorico} />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+            <SetorTipoChart data={indicadores.distribuicaoTipoSetor} />
+            <TempoEmpresaChart data={indicadores.faixasTempoEmpresa} />
+            <OcorrenciasCategoriaChart data={indicadores.ocorrenciasPorCategoria} />
+          </div>
+        </>
+      )}
+
       {/* Calendario */}
       <div className="mt-6">
         <Card>
@@ -267,9 +330,6 @@ export default function DashboardPage() {
       {/* Graficos */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
         <SetoreChart />
-        <OcorrenciasChart />
-      </div>
-      <div className="mt-6">
         <AdmissoesChart />
       </div>
     </PageContainer>
