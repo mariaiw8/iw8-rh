@@ -40,6 +40,7 @@ const setorSchema = z.object({
   titulo: z.string().min(1, 'Titulo obrigatorio'),
   tipo: z.string().optional(),
   unidade_id: z.string().optional(),
+  responsavel_id: z.string().optional(),
   // Expediente
   horario_seg_qui_entrada: z.string().optional(),
   horario_seg_qui_almoco_inicio: z.string().optional(),
@@ -147,6 +148,7 @@ function CadastrosPage() {
   const [unidades, setUnidades] = useState<Record<string, unknown>[]>([])
   const [setores, setSetores] = useState<Record<string, unknown>[]>([])
   const [funcoes, setFuncoes] = useState<Record<string, unknown>[]>([])
+  const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string }[]>([])
 
   // Modal states
   const [modalOpen, setModalOpen] = useState(false)
@@ -166,30 +168,59 @@ function CadastrosPage() {
         supabase.from('funcoes').select('*, setores(titulo)').order('titulo'),
       ])
 
+      // Load employee counts per setor and per unidade, plus employee list for responsavel
+      const funcCountRes = await supabase.from('funcionarios').select('id, nome_completo, nome, setor_id, unidade_id').eq('status', 'Ativo').order('nome_completo')
+      const funcBySetor: Record<string, number> = {}
+      const funcByUnidade: Record<string, number> = {}
+      if (!funcCountRes.error && funcCountRes.data) {
+        setFuncionarios(funcCountRes.data.map((f: Record<string, unknown>) => ({
+          id: f.id as string,
+          nome: ((f.nome_completo || f.nome) as string) || '',
+        })))
+        for (const f of funcCountRes.data) {
+          if (f.setor_id) funcBySetor[f.setor_id as string] = (funcBySetor[f.setor_id as string] || 0) + 1
+          if (f.unidade_id) funcByUnidade[f.unidade_id as string] = (funcByUnidade[f.unidade_id as string] || 0) + 1
+        }
+      }
+
       // If views don't exist, fall back to base tables
       if (uniRes.error) {
         const fallback = await supabase.from('unidades').select('*').order('titulo')
-        setUnidades(fallback.data || [])
+        const uniData = (fallback.data || []).map((u: Record<string, unknown>) => ({
+          ...u,
+          total_funcionarios: funcByUnidade[u.id as string] || 0,
+        }))
+        setUnidades(uniData)
       } else {
-        setUnidades(uniRes.data || [])
+        const uniData = (uniRes.data || []).map((u: Record<string, unknown>) => ({
+          ...u,
+          total_funcionarios: (u.total_funcionarios as number) ?? (u.num_funcionarios as number) ?? funcByUnidade[u.id as string] ?? 0,
+        }))
+        setUnidades(uniData)
       }
 
       if (setRes.error) {
         const fallback = await supabase.from('setores').select('*, unidades(titulo)').order('titulo')
-        setSetores(fallback.data || [])
+        const setData = (fallback.data || []).map((s: Record<string, unknown>) => ({
+          ...s,
+          total_funcionarios: funcBySetor[s.id as string] || 0,
+        }))
+        setSetores(setData)
       } else {
-        // Merge expediente data from base table into view data
-        const baseSetores = await supabase.from('setores').select('id, horario_seg_qui_entrada, horario_seg_qui_saida, horario_seg_qui_almoco_inicio, horario_seg_qui_almoco_fim, horario_sex_entrada, horario_sex_saida, horario_sex_almoco_inicio, horario_sex_almoco_fim')
+        // Merge expediente data from base table and employee counts
+        const baseSetores = await supabase.from('setores').select('id, horario_seg_qui_entrada, horario_seg_qui_saida, horario_seg_qui_almoco_inicio, horario_seg_qui_almoco_fim, horario_sex_entrada, horario_sex_saida, horario_sex_almoco_inicio, horario_sex_almoco_fim, responsavel_id')
+        const expedienteMap = new Map<string, Record<string, unknown>>()
         if (!baseSetores.error && baseSetores.data) {
-          const expedienteMap = new Map(baseSetores.data.map((s: Record<string, unknown>) => [s.id, s]))
-          const merged = (setRes.data || []).map((s: Record<string, unknown>) => ({
-            ...s,
-            ...(expedienteMap.get(s.id as string) || {}),
-          }))
-          setSetores(merged)
-        } else {
-          setSetores(setRes.data || [])
+          for (const s of baseSetores.data) {
+            expedienteMap.set(s.id as string, s as Record<string, unknown>)
+          }
         }
+        const merged = (setRes.data || []).map((s: Record<string, unknown>) => ({
+          ...s,
+          ...(expedienteMap.get(s.id as string) || {}),
+          total_funcionarios: (s.total_funcionarios as number) ?? (s.num_funcionarios as number) ?? funcBySetor[s.id as string] ?? 0,
+        }))
+        setSetores(merged)
       }
 
       if (funRes.error) {
@@ -387,6 +418,7 @@ function CadastrosPage() {
           onSaved={() => { setModalOpen(false); loadData() }}
           unidades={unidades}
           setores={setores}
+          funcionarios={funcionarios}
         />
       )}
       {tab === 'funcoes' && (
@@ -609,11 +641,12 @@ function UnidadeModal({
 }
 
 function SetorModal({
-  open, onClose, editingId, supabase, onSaved, unidades, setores,
+  open, onClose, editingId, supabase, onSaved, unidades, setores, funcionarios,
 }: {
   open: boolean; onClose: () => void; editingId: string | null
   supabase: ReturnType<typeof createClient>; onSaved: () => void
   unidades: Record<string, unknown>[]; setores: Record<string, unknown>[]
+  funcionarios: { id: string; nome: string }[]
 }) {
   const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<SetorForm>({
     resolver: zodResolver(setorSchema),
@@ -640,6 +673,7 @@ function SetorModal({
               titulo: (data.titulo as string) || '',
               tipo: (data.tipo as string) || '',
               unidade_id: (data.unidade_id as string) || '',
+              responsavel_id: (data.responsavel_id as string) || '',
               horario_seg_qui_entrada: (data.horario_seg_qui_entrada as string) || '',
               horario_seg_qui_almoco_inicio: (data.horario_seg_qui_almoco_inicio as string) || '',
               horario_seg_qui_almoco_fim: (data.horario_seg_qui_almoco_fim as string) || '',
@@ -653,7 +687,7 @@ function SetorModal({
         })
       } else {
         reset({
-          titulo: '', tipo: '', unidade_id: '',
+          titulo: '', tipo: '', unidade_id: '', responsavel_id: '',
           horario_seg_qui_entrada: '', horario_seg_qui_almoco_inicio: '',
           horario_seg_qui_almoco_fim: '', horario_seg_qui_saida: '',
           horario_sex_entrada: '', horario_sex_almoco_inicio: '',
@@ -667,6 +701,7 @@ function SetorModal({
     const payload: Record<string, unknown> = {
       titulo: data.titulo,
       unidade_id: data.unidade_id || null,
+      responsavel_id: data.responsavel_id || null,
       horario_seg_qui_entrada: data.horario_seg_qui_entrada || null,
       horario_seg_qui_almoco_inicio: data.horario_seg_qui_almoco_inicio || null,
       horario_seg_qui_almoco_fim: data.horario_seg_qui_almoco_fim || null,
@@ -686,7 +721,7 @@ function SetorModal({
       const { error } = await supabase.from('setores').update(payload).eq('id', editingId)
       if (error) {
         // If horario columns don't exist yet, try without them
-        if (error.message.includes('horario_')) {
+        if (error.message.includes('horario_') || error.message.includes('responsavel_id')) {
           const fallbackPayload: Record<string, unknown> = {
             titulo: data.titulo,
             unidade_id: data.unidade_id || null,
@@ -704,7 +739,7 @@ function SetorModal({
     } else {
       const { error } = await supabase.from('setores').insert(payload)
       if (error) {
-        if (error.message.includes('setores_tipo_check') || error.message.includes('horario_')) {
+        if (error.message.includes('setores_tipo_check') || error.message.includes('horario_') || error.message.includes('responsavel_id')) {
           const fallbackPayload: Record<string, unknown> = {
             titulo: data.titulo,
             unidade_id: data.unidade_id || null,
@@ -730,7 +765,7 @@ function SetorModal({
     <Modal open={open} onClose={onClose} title={editingId ? 'Editar Setor' : 'Novo Setor'} size="lg">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Input label="Titulo *" {...register('titulo')} error={errors.titulo?.message} />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Select
             label="Tipo"
             {...register('tipo')}
@@ -744,6 +779,12 @@ function SetorModal({
             label="Unidade"
             {...register('unidade_id')}
             options={unidades.map((u) => ({ value: u.id as string, label: u.titulo as string }))}
+            placeholder="Selecione"
+          />
+          <Select
+            label="Responsavel"
+            {...register('responsavel_id')}
+            options={funcionarios.map((f) => ({ value: f.id, label: f.nome }))}
             placeholder="Selecione"
           />
         </div>

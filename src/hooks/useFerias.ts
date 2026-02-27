@@ -88,7 +88,33 @@ export function useFerias() {
         .order('dias_para_vencer', { ascending: true })
 
       if (error) throw error
-      return (data || []) as FeriasAVencer[]
+
+      let result = (data || []) as Record<string, unknown>[]
+
+      // If nome is missing, enrich with funcionarios data
+      const needsNames = result.some((f) => !f.nome && !f.funcionario_nome)
+      if (needsNames && result.length > 0) {
+        const funcIds = result.map((f) => (f.funcionario_id || f.id) as string).filter(Boolean)
+        if (funcIds.length > 0) {
+          const { data: funcs } = await supabase
+            .from('funcionarios')
+            .select('id, nome_completo, nome, codigo')
+            .in('id', funcIds)
+          if (funcs) {
+            const funcMap = new Map(funcs.map((f: Record<string, unknown>) => [f.id as string, f]))
+            result = result.map((f) => {
+              const func = funcMap.get((f.funcionario_id || f.id) as string)
+              return {
+                ...f,
+                nome: (f.nome || f.funcionario_nome || (func as Record<string, unknown>)?.nome_completo || (func as Record<string, unknown>)?.nome) as string,
+                codigo: (f.codigo || (func as Record<string, unknown>)?.codigo) as string,
+              }
+            })
+          }
+        }
+      }
+
+      return result as unknown as FeriasAVencer[]
     } catch (err) {
       console.error('Erro ao carregar ferias a vencer:', err)
       return []
@@ -105,7 +131,44 @@ export function useFerias() {
         .order('data_inicio', { ascending: true })
 
       if (error) throw error
-      return (data || []) as ProximasFerias[]
+
+      let result = (data || []) as Record<string, unknown>[]
+
+      // If nome is missing, enrich with funcionarios data
+      const needsNames = result.some((f) => !f.nome && !f.funcionario_nome)
+      if (needsNames && result.length > 0) {
+        const funcIds = result.map((f) => (f.funcionario_id || f.id) as string).filter(Boolean)
+        if (funcIds.length > 0) {
+          const { data: funcs } = await supabase
+            .from('funcionarios')
+            .select('id, nome_completo, nome, codigo')
+            .in('id', funcIds)
+          if (funcs) {
+            const funcMap = new Map(funcs.map((f: Record<string, unknown>) => [f.id as string, f]))
+            result = result.map((f) => {
+              const func = funcMap.get((f.funcionario_id || f.id) as string)
+              return {
+                ...f,
+                nome: (f.nome || f.funcionario_nome || (func as Record<string, unknown>)?.nome_completo || (func as Record<string, unknown>)?.nome) as string,
+                codigo: (f.codigo || (func as Record<string, unknown>)?.codigo) as string,
+              }
+            })
+          }
+        }
+      }
+
+      return result.map((f) => ({
+        id: (f.id || f.ferias_id) as string,
+        funcionario_id: (f.funcionario_id) as string,
+        nome: (f.nome || f.funcionario_nome) as string || '',
+        codigo: (f.codigo) as string,
+        unidade: (f.unidade || f.unidade_titulo) as string,
+        setor: (f.setor || f.setor_titulo) as string,
+        data_inicio: (f.data_inicio) as string,
+        data_fim: (f.data_fim) as string,
+        dias: (f.dias) as number,
+        status: (f.status) as string,
+      })) as ProximasFerias[]
     } catch (err) {
       console.error('Erro ao carregar proximas ferias:', err)
       return []

@@ -81,10 +81,12 @@ const funcionarioSchema = z.object({
   sexta_almoco_inicio: z.string().optional(),
   sexta_almoco_fim: z.string().optional(),
   sexta_saida: z.string().optional(),
-  // Familia
+  // Familia (stored in 'familia' table)
   conjuge_nome: z.string().optional(),
   conjuge_nascimento: z.string().optional(),
-  filhos: z.array(z.object({
+  familia: z.array(z.object({
+    id: z.string().optional(),
+    parentesco: z.string(),
     nome: z.string(),
     data_nascimento: z.string().optional(),
   })).optional(),
@@ -123,9 +125,9 @@ export default function FuncionarioDetailPage() {
     resolver: zodResolver(funcionarioSchema),
   })
 
-  const { fields: filhosFields, append: addFilho, remove: removeFilho } = useFieldArray({
+  const { fields: familiaFields, append: addFamiliar, remove: removeFamiliar } = useFieldArray({
     control,
-    name: 'filhos',
+    name: 'familia',
   })
 
   const unidadeId = watch('unidade_id')
@@ -149,10 +151,9 @@ export default function FuncionarioDetailPage() {
   const loadFuncionario = useCallback(async () => {
     setLoading(true)
     try {
-      const [funcRes, uniRes, setRes, funRes] = await Promise.all([
+      const [funcRes, uniRes, funRes] = await Promise.all([
         supabase.from('funcionarios').select('*').eq('id', id).single(),
         supabase.from('unidades').select('id, titulo').order('titulo'),
-        supabase.from('setores').select('id, titulo, unidade_id, horario_seg_qui_entrada, horario_seg_qui_saida, horario_seg_qui_almoco_inicio, horario_seg_qui_almoco_fim, horario_sex_entrada, horario_sex_saida, horario_sex_almoco_inicio, horario_sex_almoco_fim').order('titulo'),
         supabase.from('funcoes').select('id, titulo, setor_id, cbo').order('titulo'),
       ])
 
@@ -162,24 +163,55 @@ export default function FuncionarioDetailPage() {
         return
       }
 
+      // Try loading setores with horario columns, fallback to basic columns
+      let setoresData: typeof setores = []
+      const setRes = await supabase.from('setores').select('id, titulo, unidade_id, horario_seg_qui_entrada, horario_seg_qui_saida, horario_seg_qui_almoco_inicio, horario_seg_qui_almoco_fim, horario_sex_entrada, horario_sex_saida, horario_sex_almoco_inicio, horario_sex_almoco_fim').order('titulo')
+      if (setRes.error) {
+        // Fallback: load without horario columns
+        const fallbackRes = await supabase.from('setores').select('id, titulo, unidade_id').order('titulo')
+        setoresData = (fallbackRes.data || []).map((s: Record<string, unknown>) => ({
+          id: s.id as string,
+          titulo: s.titulo as string,
+          unidade_id: s.unidade_id as string | undefined,
+        }))
+      } else {
+        setoresData = (setRes.data || []).map((s: Record<string, unknown>) => ({
+          id: s.id as string,
+          titulo: s.titulo as string,
+          unidade_id: s.unidade_id as string | undefined,
+          horario_seg_qui_entrada: s.horario_seg_qui_entrada as string | undefined,
+          horario_seg_qui_saida: s.horario_seg_qui_saida as string | undefined,
+          horario_seg_qui_almoco_inicio: s.horario_seg_qui_almoco_inicio as string | undefined,
+          horario_seg_qui_almoco_fim: s.horario_seg_qui_almoco_fim as string | undefined,
+          horario_sex_entrada: s.horario_sex_entrada as string | undefined,
+          horario_sex_saida: s.horario_sex_saida as string | undefined,
+          horario_sex_almoco_inicio: s.horario_sex_almoco_inicio as string | undefined,
+          horario_sex_almoco_fim: s.horario_sex_almoco_fim as string | undefined,
+        }))
+      }
+
       const f = funcRes.data
       setFuncionario(f)
       setFotoPreview(f.foto_url || null)
       setUnidades(uniRes.data || [])
-      setSetores(setRes.data || [])
+      setSetores(setoresData)
       setFuncoes(funRes.data || [])
 
-      // Parse filhos from JSONB or related table
-      let filhos: { nome: string; data_nascimento?: string }[] = []
-      if (f.filhos && Array.isArray(f.filhos)) {
-        filhos = f.filhos
-      } else {
-        // Try fetching from filhos table
-        const filhosRes = await supabase.from('filhos').select('*').eq('funcionario_id', id).order('nome')
-        if (!filhosRes.error && filhosRes.data) {
-          filhos = filhosRes.data.map((c: Record<string, string>) => ({ nome: c.nome, data_nascimento: c.data_nascimento }))
-        }
+      // Load family members from 'familia' table
+      let familiaMembers: { id?: string; parentesco: string; nome: string; data_nascimento?: string }[] = []
+      const familiaRes = await supabase.from('familia').select('*').eq('funcionario_id', id).order('parentesco').order('nome')
+      if (!familiaRes.error && familiaRes.data) {
+        familiaMembers = familiaRes.data.map((m: Record<string, string>) => ({
+          id: m.id,
+          parentesco: m.parentesco || 'Filho(a)',
+          nome: m.nome || '',
+          data_nascimento: m.data_nascimento || '',
+        }))
       }
+
+      // Extract conjuge from familia members
+      const conjuge = familiaMembers.find((m) => m.parentesco === 'Cônjuge' || m.parentesco === 'Conjuge')
+      const outrosFamilia = familiaMembers.filter((m) => m.parentesco !== 'Cônjuge' && m.parentesco !== 'Conjuge')
 
       reset({
         nome: f.nome_completo || f.nome || '',
@@ -217,9 +249,9 @@ export default function FuncionarioDetailPage() {
         sexta_almoco_inicio: f.horario_sex_almoco_inicio || f.sexta_almoco_inicio || '',
         sexta_almoco_fim: f.horario_sex_almoco_fim || f.sexta_almoco_fim || '',
         sexta_saida: f.horario_sex_saida || f.sexta_saida || '',
-        conjuge_nome: f.conjuge_nome || '',
-        conjuge_nascimento: f.conjuge_nascimento || '',
-        filhos,
+        conjuge_nome: conjuge?.nome || '',
+        conjuge_nascimento: conjuge?.data_nascimento || '',
+        familia: outrosFamilia,
       })
     } catch (err) {
       console.error('Erro:', err)
@@ -263,8 +295,8 @@ export default function FuncionarioDetailPage() {
         }
       }
 
-      const { filhos, nome, conjuge_nascimento, conjuge_nome, ...restData } = data
-      const basePayload: Record<string, unknown> = {
+      const { familia, nome, conjuge_nascimento, conjuge_nome, ...restData } = data
+      const payload: Record<string, unknown> = {
         nome_completo: nome,
         foto_url: fotoUrl || null,
         codigo: restData.codigo || null,
@@ -301,34 +333,46 @@ export default function FuncionarioDetailPage() {
         horario_sex_almoco_inicio: restData.sexta_almoco_inicio || null,
         horario_sex_almoco_fim: restData.sexta_almoco_fim || null,
         horario_sex_saida: restData.sexta_saida || null,
-        conjuge_nome: conjuge_nome || null,
       }
 
-      // Try saving with conjuge_nascimento first, fallback without it
-      const fullPayload: Record<string, unknown> = { ...basePayload, conjuge_nascimento: conjuge_nascimento || null }
-      let { error } = await supabase.from('funcionarios').update(fullPayload).eq('id', id)
-      if (error?.message?.includes('conjuge_nascimento')) {
-        // Column doesn't exist yet, save without it
-        const retry = await supabase.from('funcionarios').update(basePayload).eq('id', id)
-        error = retry.error
-      }
+      const { error } = await supabase.from('funcionarios').update(payload).eq('id', id)
       if (error) {
         toast.error('Erro ao salvar: ' + error.message)
         return
       }
 
-      // Save filhos - try JSONB column first, then separate table
-      if (filhos !== undefined) {
-        // Try updating filhos as JSONB
-        const { error: filhosError } = await supabase.from('funcionarios').update({ filhos }).eq('id', id)
-        if (filhosError) {
-          // Fallback: use separate table
-          await supabase.from('filhos').delete().eq('funcionario_id', id)
-          if (filhos.length > 0) {
-            await supabase.from('filhos').insert(
-              filhos.map((f) => ({ funcionario_id: id, nome: f.nome, data_nascimento: f.data_nascimento || null }))
-            )
+      // Save family members to 'familia' table
+      await supabase.from('familia').delete().eq('funcionario_id', id)
+      const familiaInserts: { funcionario_id: string; parentesco: string; nome: string; data_nascimento: string | null }[] = []
+
+      // Add conjuge if provided
+      if (conjuge_nome && conjuge_nome.trim()) {
+        familiaInserts.push({
+          funcionario_id: id,
+          parentesco: 'Cônjuge',
+          nome: conjuge_nome.trim(),
+          data_nascimento: conjuge_nascimento || null,
+        })
+      }
+
+      // Add other family members (filhos, etc.)
+      if (familia && familia.length > 0) {
+        for (const m of familia) {
+          if (m.nome && m.nome.trim()) {
+            familiaInserts.push({
+              funcionario_id: id,
+              parentesco: m.parentesco || 'Filho(a)',
+              nome: m.nome.trim(),
+              data_nascimento: m.data_nascimento || null,
+            })
           }
+        }
+      }
+
+      if (familiaInserts.length > 0) {
+        const { error: famError } = await supabase.from('familia').insert(familiaInserts)
+        if (famError) {
+          console.error('Erro ao salvar familia:', famError)
         }
       }
 
@@ -707,23 +751,37 @@ export default function FuncionarioDetailPage() {
 
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-semibold text-cinza-estrutural">Filhos</h4>
+                    <h4 className="text-sm font-semibold text-cinza-estrutural">Dependentes / Filhos</h4>
                     {editing && (
-                      <Button type="button" variant="ghost" size="sm" onClick={() => addFilho({ nome: '', data_nascimento: '' })}>
-                        <Plus size={14} /> Adicionar Filho(a)
+                      <Button type="button" variant="ghost" size="sm" onClick={() => addFamiliar({ parentesco: 'Filho(a)', nome: '', data_nascimento: '' })}>
+                        <Plus size={14} /> Adicionar
                       </Button>
                     )}
                   </div>
-                  {filhosFields.length === 0 ? (
-                    <p className="text-sm text-cinza-estrutural">Nenhum filho cadastrado</p>
+                  {familiaFields.length === 0 ? (
+                    <p className="text-sm text-cinza-estrutural">Nenhum dependente cadastrado</p>
                   ) : (
                     <div className="space-y-3">
-                      {filhosFields.map((field, index) => (
+                      {familiaFields.map((field, index) => (
                         <div key={field.id} className="flex items-end gap-3">
+                          <div className="w-40">
+                            <Select
+                              label="Parentesco"
+                              {...register(`familia.${index}.parentesco`)}
+                              options={[
+                                { value: 'Filho(a)', label: 'Filho(a)' },
+                                { value: 'Pai', label: 'Pai' },
+                                { value: 'Mae', label: 'Mae' },
+                                { value: 'Irmao(a)', label: 'Irmao(a)' },
+                                { value: 'Outro', label: 'Outro' },
+                              ]}
+                              disabled={!editing}
+                            />
+                          </div>
                           <div className="flex-1">
                             <Input
                               label="Nome"
-                              {...register(`filhos.${index}.nome`)}
+                              {...register(`familia.${index}.nome`)}
                               disabled={!editing}
                             />
                           </div>
@@ -731,14 +789,14 @@ export default function FuncionarioDetailPage() {
                             <Input
                               label="Data de Nascimento"
                               type="date"
-                              {...register(`filhos.${index}.data_nascimento`)}
+                              {...register(`familia.${index}.data_nascimento`)}
                               disabled={!editing}
                             />
                           </div>
                           {editing && (
                             <button
                               type="button"
-                              onClick={() => removeFilho(index)}
+                              onClick={() => removeFamiliar(index)}
                               className="p-2 text-red-500 hover:bg-red-50 rounded mb-0.5"
                             >
                               <Trash2 size={16} />

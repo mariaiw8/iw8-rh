@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   LayoutDashboard,
   Users,
@@ -73,8 +73,17 @@ const navItems: NavItem[] = [
 ]
 
 export function Sidebar() {
+  return (
+    <Suspense fallback={null}>
+      <SidebarInner />
+    </Suspense>
+  )
+}
+
+function SidebarInner() {
   const pathname = usePathname()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
   const [cadastrosOpen, setCadastrosOpen] = useState(pathname.startsWith('/cadastros'))
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -127,7 +136,11 @@ export function Sidebar() {
                         href={child.href}
                         onClick={() => setMobileOpen(false)}
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 ${
-                          pathname + (typeof window !== 'undefined' ? window.location.search : '') === child.href
+                          (() => {
+                            const currentSearch = searchParams.toString()
+                            const currentFull = pathname + (currentSearch ? `?${currentSearch}` : '')
+                            return currentFull === child.href
+                          })()
                             ? 'bg-azul text-white border-l-2 border-laranja'
                             : 'text-cinza-branco/80 hover:bg-white/10'
                         }`}

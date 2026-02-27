@@ -99,14 +99,34 @@ export default function DashboardPage() {
         })
         .slice(0, 5)
 
+      // Enrich proximas ferias with names if missing
+      let proximasFeriasData = (proximasFeriasRes.data || []) as Record<string, string>[]
+      const needsNames = proximasFeriasData.some((f) => !f.nome && !f.funcionario_nome)
+      if (needsNames && proximasFeriasData.length > 0) {
+        const funcIds = proximasFeriasData.map((f) => f.funcionario_id || f.id).filter(Boolean)
+        if (funcIds.length > 0) {
+          const { data: funcs } = await supabase
+            .from('funcionarios')
+            .select('id, nome_completo, nome')
+            .in('id', funcIds)
+          if (funcs) {
+            const funcMap = new Map(funcs.map((f: Record<string, string>) => [f.id, f]))
+            proximasFeriasData = proximasFeriasData.map((f) => {
+              const func = funcMap.get(f.funcionario_id || f.id)
+              return { ...f, nome: f.nome || f.funcionario_nome || func?.nome_completo || func?.nome || '' }
+            })
+          }
+        }
+      }
+
       setData({
         totalAtivos: ativosRes.count || 0,
         emFerias: feriasRes.count || 0,
         ocorrenciasMes: ocorrenciasRes.count || 0,
         feriasVencer: feriasVencerRes.count || 0,
-        proximasFerias: (proximasFeriasRes.data || []).map((f: Record<string, string>) => ({
+        proximasFerias: proximasFeriasData.map((f) => ({
           id: f.id || f.funcionario_id,
-          nome: f.nome || f.funcionario_nome,
+          nome: f.nome || f.funcionario_nome || '',
           inicio: f.data_inicio || f.inicio,
           fim: f.data_fim || f.fim,
         })),
