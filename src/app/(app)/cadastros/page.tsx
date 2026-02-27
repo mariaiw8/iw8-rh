@@ -162,73 +162,45 @@ function CadastrosPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [uniRes, setRes, funRes] = await Promise.all([
-        supabase.from('vw_resumo_unidades').select('*').order('titulo'),
-        supabase.from('vw_resumo_setores').select('*').order('titulo'),
+      // Always load from base tables to guarantee data
+      const [uniRes, setoresRes, funcoesRes, funcRes] = await Promise.all([
+        supabase.from('unidades').select('*').order('titulo'),
+        supabase.from('setores').select('*, unidades(titulo)').order('titulo'),
         supabase.from('funcoes').select('*, setores(titulo)').order('titulo'),
+        supabase.from('funcionarios').select('id, nome_completo, nome, setor_id, unidade_id').eq('status', 'Ativo').order('nome_completo'),
       ])
 
-      // Load employee counts per setor and per unidade, plus employee list for responsavel
-      const funcCountRes = await supabase.from('funcionarios').select('id, nome_completo, nome, setor_id, unidade_id').eq('status', 'Ativo').order('nome_completo')
+      // Count employees per setor and per unidade
       const funcBySetor: Record<string, number> = {}
       const funcByUnidade: Record<string, number> = {}
-      if (!funcCountRes.error && funcCountRes.data) {
-        setFuncionarios(funcCountRes.data.map((f: Record<string, unknown>) => ({
-          id: f.id as string,
-          nome: ((f.nome_completo || f.nome) as string) || '',
-        })))
-        for (const f of funcCountRes.data) {
+      const allFuncionarios: { id: string; nome: string }[] = []
+      if (!funcRes.error && funcRes.data) {
+        for (const f of funcRes.data) {
+          allFuncionarios.push({
+            id: f.id as string,
+            nome: ((f.nome_completo || f.nome) as string) || '',
+          })
           if (f.setor_id) funcBySetor[f.setor_id as string] = (funcBySetor[f.setor_id as string] || 0) + 1
           if (f.unidade_id) funcByUnidade[f.unidade_id as string] = (funcByUnidade[f.unidade_id as string] || 0) + 1
         }
       }
+      setFuncionarios(allFuncionarios)
 
-      // If views don't exist, fall back to base tables
-      if (uniRes.error) {
-        const fallback = await supabase.from('unidades').select('*').order('titulo')
-        const uniData = (fallback.data || []).map((u: Record<string, unknown>) => ({
-          ...u,
-          total_funcionarios: funcByUnidade[u.id as string] || 0,
-        }))
-        setUnidades(uniData)
-      } else {
-        const uniData = (uniRes.data || []).map((u: Record<string, unknown>) => ({
-          ...u,
-          total_funcionarios: (u.total_funcionarios as number) ?? (u.num_funcionarios as number) ?? funcByUnidade[u.id as string] ?? 0,
-        }))
-        setUnidades(uniData)
-      }
+      // Unidades with employee count
+      setUnidades((uniRes.data || []).map((u: Record<string, unknown>) => ({
+        ...u,
+        total_funcionarios: funcByUnidade[u.id as string] || 0,
+      })))
 
-      if (setRes.error) {
-        const fallback = await supabase.from('setores').select('*, unidades(titulo)').order('titulo')
-        const setData = (fallback.data || []).map((s: Record<string, unknown>) => ({
-          ...s,
-          total_funcionarios: funcBySetor[s.id as string] || 0,
-        }))
-        setSetores(setData)
-      } else {
-        // Merge expediente data from base table and employee counts
-        const baseSetores = await supabase.from('setores').select('id, horario_seg_qui_entrada, horario_seg_qui_saida, horario_seg_qui_almoco_inicio, horario_seg_qui_almoco_fim, horario_sex_entrada, horario_sex_saida, horario_sex_almoco_inicio, horario_sex_almoco_fim, responsavel_id')
-        const expedienteMap = new Map<string, Record<string, unknown>>()
-        if (!baseSetores.error && baseSetores.data) {
-          for (const s of baseSetores.data) {
-            expedienteMap.set(s.id as string, s as Record<string, unknown>)
-          }
-        }
-        const merged = (setRes.data || []).map((s: Record<string, unknown>) => ({
-          ...s,
-          ...(expedienteMap.get(s.id as string) || {}),
-          total_funcionarios: (s.total_funcionarios as number) ?? (s.num_funcionarios as number) ?? funcBySetor[s.id as string] ?? 0,
-        }))
-        setSetores(merged)
-      }
+      // Setores: the base table already has horario_* columns (if they exist via SQL migration)
+      // We use select('*') which includes all columns that exist
+      setSetores((setoresRes.data || []).map((s: Record<string, unknown>) => ({
+        ...s,
+        unidade_titulo: (s.unidades as Record<string, string>)?.titulo || '',
+        total_funcionarios: funcBySetor[s.id as string] || 0,
+      })))
 
-      if (funRes.error) {
-        const fallback = await supabase.from('funcoes').select('*, setores(titulo)').order('titulo')
-        setFuncoes(fallback.data || [])
-      } else {
-        setFuncoes(funRes.data || [])
-      }
+      setFuncoes(funcoesRes.data || [])
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
       toast.error('Erro ao carregar dados')

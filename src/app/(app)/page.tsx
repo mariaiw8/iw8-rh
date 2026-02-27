@@ -86,7 +86,7 @@ export default function DashboardPage() {
         supabase.from('ferias').select('id', { count: 'exact', head: true }).eq('status', 'Em Andamento'),
         supabase.from('ocorrencias').select('id', { count: 'exact', head: true }).gte('data_inicio', inicioMes).lte('data_inicio', fimMes),
         supabase.from('vw_ferias_a_vencer').select('id', { count: 'exact', head: true }).in('situacao', ['ALERTA', 'VENCIDA']),
-        supabase.from('vw_proximas_ferias').select('*').limit(5),
+        supabase.from('ferias').select('*, funcionarios(id, nome_completo, nome)').in('status', ['Programada', 'Em Andamento']).gte('data_inicio', new Date().toISOString().split('T')[0]).order('data_inicio', { ascending: true }).limit(5),
         supabase.from('funcionarios').select('id, nome, data_nascimento, foto_url').eq('status', 'Ativo'),
         supabase.from('funcionarios').select('id, nome, data_admissao, foto_url').eq('status', 'Ativo').gte('data_admissao', new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]).order('data_admissao', { ascending: false }).limit(5),
       ])
@@ -99,37 +99,20 @@ export default function DashboardPage() {
         })
         .slice(0, 5)
 
-      // Enrich proximas ferias with names if missing
-      let proximasFeriasData = (proximasFeriasRes.data || []) as Record<string, string>[]
-      const needsNames = proximasFeriasData.some((f) => !f.nome && !f.funcionario_nome)
-      if (needsNames && proximasFeriasData.length > 0) {
-        const funcIds = proximasFeriasData.map((f) => f.funcionario_id || f.id).filter(Boolean)
-        if (funcIds.length > 0) {
-          const { data: funcs } = await supabase
-            .from('funcionarios')
-            .select('id, nome_completo, nome')
-            .in('id', funcIds)
-          if (funcs) {
-            const funcMap = new Map(funcs.map((f: Record<string, string>) => [f.id, f]))
-            proximasFeriasData = proximasFeriasData.map((f) => {
-              const func = funcMap.get(f.funcionario_id || f.id)
-              return { ...f, nome: f.nome || f.funcionario_nome || func?.nome_completo || func?.nome || '' }
-            })
-          }
-        }
-      }
-
       setData({
         totalAtivos: ativosRes.count || 0,
         emFerias: feriasRes.count || 0,
         ocorrenciasMes: ocorrenciasRes.count || 0,
         feriasVencer: feriasVencerRes.count || 0,
-        proximasFerias: proximasFeriasData.map((f) => ({
-          id: f.id || f.funcionario_id,
-          nome: f.nome || f.funcionario_nome || '',
-          inicio: f.data_inicio || f.inicio,
-          fim: f.data_fim || f.fim,
-        })),
+        proximasFerias: (proximasFeriasRes.data || []).map((f: Record<string, unknown>) => {
+          const func = f.funcionarios as Record<string, string> | null
+          return {
+            id: f.id as string,
+            nome: (func?.nome_completo || func?.nome || '') as string,
+            inicio: f.data_inicio as string,
+            fim: f.data_fim as string,
+          }
+        }),
         aniversariantes,
         admissoesRecentes: (admissoesRes.data || []).map((f: Record<string, string>) => ({
           id: f.id,

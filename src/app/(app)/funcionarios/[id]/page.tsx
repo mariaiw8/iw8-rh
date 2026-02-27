@@ -711,10 +711,10 @@ export default function FuncionarioDetailPage() {
                     )
                   })()}
                 </div>
-                {editing && getSetorExpediente() && (
-                  <Button type="button" variant="ghost" size="sm" onClick={applySetorSchedule}>
+                {editing && setorId && getSetorExpediente() && (
+                  <Button type="button" variant="secondary" size="sm" onClick={applySetorSchedule}>
                     <Building2 size={14} />
-                    Horario Padrao do Setor
+                    Puxar Expediente do Setor
                   </Button>
                 )}
               </div>
