@@ -36,8 +36,8 @@ interface DashboardData {
   ocorrenciasMes: number
   feriasVencer: number
   proximasFerias: Array<{ id: string; nome: string; inicio: string; fim: string }>
-  aniversariantes: Array<{ id: string; nome: string; data_nascimento: string; foto_url?: string }>
-  admissoesRecentes: Array<{ id: string; nome: string; data_admissao: string; funcao?: string; foto_url?: string }>
+  aniversariantes: Array<{ id: string; nome_completo: string; data_nascimento: string; foto_url?: string }>
+  admissoesRecentes: Array<{ id: string; nome_completo: string; data_admissao: string; funcao?: string; foto_url?: string }>
 }
 
 export default function DashboardPage() {
@@ -87,8 +87,8 @@ export default function DashboardPage() {
         supabase.from('ocorrencias').select('id', { count: 'exact', head: true }).gte('data_inicio', inicioMes).lte('data_inicio', fimMes),
         supabase.from('vw_ferias_a_vencer').select('id', { count: 'exact', head: true }).in('situacao', ['ALERTA', 'VENCIDA']),
         supabase.from('vw_proximas_ferias').select('*').limit(5),
-        supabase.from('funcionarios').select('id, nome, data_nascimento, foto_url').eq('status', 'Ativo'),
-        supabase.from('funcionarios').select('id, nome, data_admissao, foto_url').eq('status', 'Ativo').gte('data_admissao', new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]).order('data_admissao', { ascending: false }).limit(5),
+        supabase.from('funcionarios').select('id, nome_completo, data_nascimento, foto_url').eq('status', 'Ativo'),
+        supabase.from('funcionarios').select('id, nome_completo, data_admissao, foto_url').eq('status', 'Ativo').gte('data_admissao', new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]).order('data_admissao', { ascending: false }).limit(5),
       ])
 
       const aniversariantes = (aniversariantesRes.data || [])
@@ -105,15 +105,15 @@ export default function DashboardPage() {
         ocorrenciasMes: ocorrenciasRes.count || 0,
         feriasVencer: feriasVencerRes.count || 0,
         proximasFerias: (proximasFeriasRes.data || []).map((f: Record<string, string>) => ({
-          id: f.id || f.funcionario_id,
-          nome: f.nome || f.funcionario_nome,
-          inicio: f.data_inicio || f.inicio,
-          fim: f.data_fim || f.fim,
+          id: f.id,
+          nome: f.nome,
+          inicio: f.data_inicio,
+          fim: f.data_fim,
         })),
         aniversariantes,
         admissoesRecentes: (admissoesRes.data || []).map((f: Record<string, string>) => ({
           id: f.id,
-          nome: f.nome,
+          nome_completo: f.nome_completo,
           data_admissao: f.data_admissao,
           foto_url: f.foto_url,
         })),
@@ -240,9 +240,9 @@ export default function DashboardPage() {
             <div className="space-y-3">
               {data.aniversariantes.map((f) => (
                 <div key={f.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
-                  <Avatar src={f.foto_url} name={f.nome} size="sm" />
+                  <Avatar src={f.foto_url} name={f.nome_completo} size="sm" />
                   <div>
-                    <p className="text-sm font-medium text-cinza-preto">{f.nome}</p>
+                    <p className="text-sm font-medium text-cinza-preto">{f.nome_completo}</p>
                     <p className="text-xs text-cinza-estrutural">
                       {f.data_nascimento && format(new Date(f.data_nascimento + 'T00:00:00'), 'dd/MM')}
                     </p>
@@ -275,9 +275,9 @@ export default function DashboardPage() {
             <div className="space-y-3">
               {data.admissoesRecentes.map((f) => (
                 <div key={f.id} className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0">
-                  <Avatar src={f.foto_url} name={f.nome} size="sm" />
+                  <Avatar src={f.foto_url} name={f.nome_completo} size="sm" />
                   <div>
-                    <p className="text-sm font-medium text-cinza-preto">{f.nome}</p>
+                    <p className="text-sm font-medium text-cinza-preto">{f.nome_completo}</p>
                     <p className="text-xs text-cinza-estrutural">
                       {f.data_admissao && format(new Date(f.data_admissao + 'T00:00:00'), 'dd/MM/yyyy')}
                     </p>
