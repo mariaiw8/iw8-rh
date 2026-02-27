@@ -15,6 +15,7 @@ import {
   Palmtree,
   ClipboardList,
   DollarSign,
+  FileBarChart,
   LogOut,
   Menu,
   X,
@@ -63,6 +64,11 @@ const navItems: NavItem[] = [
     label: 'Financeiro',
     href: '/financeiro',
     icon: <DollarSign size={20} />,
+  },
+  {
+    label: 'Relatorios',
+    href: '/relatorios',
+    icon: <FileBarChart size={20} />,
   },
 ]
 
