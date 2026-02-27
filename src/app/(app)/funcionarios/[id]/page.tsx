@@ -81,11 +81,11 @@ const funcionarioSchema = z.object({
   sexta_almoco_inicio: z.string().optional(),
   sexta_almoco_fim: z.string().optional(),
   sexta_saida: z.string().optional(),
-  // Familia
-  conjuge_nome: z.string().optional(),
-  conjuge_nascimento: z.string().optional(),
-  filhos: z.array(z.object({
-    nome: z.string(),
+  // Familia (salva na tabela "familia")
+  familiares: z.array(z.object({
+    id: z.string().optional(),
+    nome: z.string().min(1, 'Nome obrigatório'),
+    parentesco: z.string().min(1, 'Parentesco obrigatório'),
     data_nascimento: z.string().optional(),
   })).optional(),
 })
@@ -123,9 +123,9 @@ export default function FuncionarioDetailPage() {
     resolver: zodResolver(funcionarioSchema),
   })
 
-  const { fields: filhosFields, append: addFilho, remove: removeFilho } = useFieldArray({
+  const { fields: familiaFields, append: addFamiliar, remove: removeFamiliar } = useFieldArray({
     control,
-    name: 'filhos',
+    name: 'familiares',
   })
 
   const unidadeId = watch('unidade_id')
@@ -169,16 +169,16 @@ export default function FuncionarioDetailPage() {
       setSetores(setRes.data || [])
       setFuncoes(funRes.data || [])
 
-      // Parse filhos from JSONB or related table
-      let filhos: { nome: string; data_nascimento?: string }[] = []
-      if (f.filhos && Array.isArray(f.filhos)) {
-        filhos = f.filhos
-      } else {
-        // Try fetching from filhos table
-        const filhosRes = await supabase.from('filhos').select('*').eq('funcionario_id', id).order('nome')
-        if (!filhosRes.error && filhosRes.data) {
-          filhos = filhosRes.data.map((c: Record<string, string>) => ({ nome: c.nome, data_nascimento: c.data_nascimento }))
-        }
+      // Carregar familiares da tabela "familia"
+      let familiares: { id?: string; nome: string; parentesco: string; data_nascimento?: string }[] = []
+      const famRes = await supabase.from('familia').select('id, nome, parentesco, data_nascimento').eq('funcionario_id', id).order('nome')
+      if (!famRes.error && famRes.data) {
+        familiares = famRes.data.map((fm: Record<string, string>) => ({
+          id: fm.id,
+          nome: fm.nome || '',
+          parentesco: fm.parentesco || '',
+          data_nascimento: fm.data_nascimento || '',
+        }))
       }
 
       reset({
@@ -217,9 +217,7 @@ export default function FuncionarioDetailPage() {
         sexta_almoco_inicio: f.horario_sex_almoco_inicio || f.sexta_almoco_inicio || '',
         sexta_almoco_fim: f.horario_sex_almoco_fim || f.sexta_almoco_fim || '',
         sexta_saida: f.horario_sex_saida || f.sexta_saida || '',
-        conjuge_nome: f.conjuge_nome || '',
-        conjuge_nascimento: f.conjuge_nascimento || '',
-        filhos,
+        familiares,
       })
     } catch (err) {
       console.error('Erro:', err)
@@ -263,7 +261,7 @@ export default function FuncionarioDetailPage() {
         }
       }
 
-      const { filhos, nome, conjuge_nascimento, conjuge_nome, ...restData } = data
+      const { familiares, nome, ...restData } = data
       const basePayload: Record<string, unknown> = {
         nome_completo: nome,
         foto_url: fotoUrl || null,
@@ -301,33 +299,30 @@ export default function FuncionarioDetailPage() {
         horario_sex_almoco_inicio: restData.sexta_almoco_inicio || null,
         horario_sex_almoco_fim: restData.sexta_almoco_fim || null,
         horario_sex_saida: restData.sexta_saida || null,
-        conjuge_nome: conjuge_nome || null,
       }
 
-      // Try saving with conjuge_nascimento first, fallback without it
-      const fullPayload: Record<string, unknown> = { ...basePayload, conjuge_nascimento: conjuge_nascimento || null }
-      let { error } = await supabase.from('funcionarios').update(fullPayload).eq('id', id)
-      if (error?.message?.includes('conjuge_nascimento')) {
-        // Column doesn't exist yet, save without it
-        const retry = await supabase.from('funcionarios').update(basePayload).eq('id', id)
-        error = retry.error
-      }
+      const { error } = await supabase.from('funcionarios').update(basePayload).eq('id', id)
       if (error) {
         toast.error('Erro ao salvar: ' + error.message)
         return
       }
 
-      // Save filhos - try JSONB column first, then separate table
-      if (filhos !== undefined) {
-        // Try updating filhos as JSONB
-        const { error: filhosError } = await supabase.from('funcionarios').update({ filhos }).eq('id', id)
-        if (filhosError) {
-          // Fallback: use separate table
-          await supabase.from('filhos').delete().eq('funcionario_id', id)
-          if (filhos.length > 0) {
-            await supabase.from('filhos').insert(
-              filhos.map((f) => ({ funcionario_id: id, nome: f.nome, data_nascimento: f.data_nascimento || null }))
-            )
+      // Salvar familiares na tabela "familia"
+      if (familiares !== undefined) {
+        // Remover todos os familiares existentes e reinserir
+        await supabase.from('familia').delete().eq('funcionario_id', id)
+        if (familiares.length > 0) {
+          const { error: famError } = await supabase.from('familia').insert(
+            familiares.map((fm) => ({
+              funcionario_id: id,
+              nome: fm.nome,
+              parentesco: fm.parentesco,
+              data_nascimento: fm.data_nascimento || null,
+            }))
+          )
+          if (famError) {
+            toast.error('Erro ao salvar familiares: ' + famError.message)
+            return
           }
         }
       }
@@ -700,55 +695,64 @@ export default function FuncionarioDetailPage() {
             <Card>
               <h3 className="text-lg font-bold text-cinza-preto mb-4">Familia</h3>
               <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input label="Nome do Conjuge" {...register('conjuge_nome')} disabled={!editing} />
-                  <Input label="Nascimento do Conjuge" type="date" {...register('conjuge_nascimento')} disabled={!editing} />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-sm font-semibold text-cinza-estrutural">Filhos</h4>
-                    {editing && (
-                      <Button type="button" variant="ghost" size="sm" onClick={() => addFilho({ nome: '', data_nascimento: '' })}>
-                        <Plus size={14} /> Adicionar Filho(a)
-                      </Button>
-                    )}
-                  </div>
-                  {filhosFields.length === 0 ? (
-                    <p className="text-sm text-cinza-estrutural">Nenhum filho cadastrado</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {filhosFields.map((field, index) => (
-                        <div key={field.id} className="flex items-end gap-3">
-                          <div className="flex-1">
-                            <Input
-                              label="Nome"
-                              {...register(`filhos.${index}.nome`)}
-                              disabled={!editing}
-                            />
-                          </div>
-                          <div className="w-48">
-                            <Input
-                              label="Data de Nascimento"
-                              type="date"
-                              {...register(`filhos.${index}.data_nascimento`)}
-                              disabled={!editing}
-                            />
-                          </div>
-                          {editing && (
-                            <button
-                              type="button"
-                              onClick={() => removeFilho(index)}
-                              className="p-2 text-red-500 hover:bg-red-50 rounded mb-0.5"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-semibold text-cinza-estrutural">Familiares</h4>
+                  {editing && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => addFamiliar({ nome: '', parentesco: '', data_nascimento: '' })}>
+                      <Plus size={14} /> Adicionar Familiar
+                    </Button>
                   )}
                 </div>
+                {familiaFields.length === 0 ? (
+                  <p className="text-sm text-cinza-estrutural">Nenhum familiar cadastrado</p>
+                ) : (
+                  <div className="space-y-3">
+                    {familiaFields.map((field, index) => (
+                      <div key={field.id} className="flex items-end gap-3">
+                        <div className="w-40">
+                          <Select
+                            label="Parentesco"
+                            placeholder="Selecione"
+                            options={[
+                              { value: 'Cônjuge', label: 'Cônjuge' },
+                              { value: 'Filho(a)', label: 'Filho(a)' },
+                              { value: 'Pai', label: 'Pai' },
+                              { value: 'Mãe', label: 'Mãe' },
+                              { value: 'Irmão(ã)', label: 'Irmão(ã)' },
+                              { value: 'Outro', label: 'Outro' },
+                            ]}
+                            {...register(`familiares.${index}.parentesco`)}
+                            disabled={!editing}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <Input
+                            label="Nome"
+                            {...register(`familiares.${index}.nome`)}
+                            disabled={!editing}
+                          />
+                        </div>
+                        <div className="w-48">
+                          <Input
+                            label="Data de Nascimento"
+                            type="date"
+                            {...register(`familiares.${index}.data_nascimento`)}
+                            disabled={!editing}
+                          />
+                        </div>
+                        {editing && (
+                          <button
+                            type="button"
+                            onClick={() => removeFamiliar(index)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded mb-0.5"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </Card>
           </div>

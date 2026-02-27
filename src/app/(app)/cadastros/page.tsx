@@ -38,7 +38,7 @@ const unidadeSchema = z.object({
 
 const setorSchema = z.object({
   titulo: z.string().min(1, 'Titulo obrigatorio'),
-  tipo: z.string().optional(),
+  tipo: z.string().min(1, 'Tipo obrigatorio'),
   unidade_id: z.string().optional(),
   // Expediente
   horario_seg_qui_entrada: z.string().optional(),
@@ -676,11 +676,7 @@ function SetorModal({
       horario_sex_almoco_fim: data.horario_sex_almoco_fim || null,
       horario_sex_saida: data.horario_sex_saida || null,
     }
-    if (data.tipo && data.tipo.trim() !== '') {
-      payload.tipo = data.tipo
-    } else {
-      payload.tipo = null
-    }
+    payload.tipo = data.tipo
 
     if (editingId) {
       const { error } = await supabase.from('setores').update(payload).eq('id', editingId)

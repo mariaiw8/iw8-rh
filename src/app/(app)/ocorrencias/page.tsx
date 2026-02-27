@@ -19,10 +19,10 @@ import { format } from 'date-fns'
 
 const CATEGORIAS = [
   { value: '', label: 'Todas' },
-  { value: 'Remuneracao', label: 'Remuneracao' },
-  { value: 'Ausencia', label: 'Ausencia' },
+  { value: 'Remuneração', label: 'Remuneração' },
+  { value: 'Ausência', label: 'Ausência' },
   { value: 'Disciplinar', label: 'Disciplinar' },
-  { value: 'Beneficio', label: 'Beneficio' },
+  { value: 'Benefício', label: 'Benefício' },
   { value: 'Outro', label: 'Outro' },
 ]
 

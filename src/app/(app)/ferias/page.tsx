@@ -27,7 +27,7 @@ function getStatusBadge(status: string) {
   switch (status) {
     case 'Programada': return <Badge variant="info">Programada</Badge>
     case 'Em Andamento': return <Badge variant="warning">Em Andamento</Badge>
-    case 'Concluida': return <Badge variant="success">Concluida</Badge>
+    case 'Concluída': return <Badge variant="success">Concluída</Badge>
     case 'Cancelada': return <Badge variant="neutral">Cancelada</Badge>
     default: return <Badge>{status}</Badge>
   }
