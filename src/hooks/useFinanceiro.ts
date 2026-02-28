@@ -42,6 +42,10 @@ export interface Transacao {
   created_at?: string
 }
 
+function stripAccents(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
 export function useFinanceiro() {
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
@@ -211,7 +215,7 @@ export function useFinanceiro() {
           return {
             ...t,
             tipo_titulo: tipo?.titulo || '',
-            natureza: tipo?.natureza || '',
+            natureza: stripAccents(tipo?.natureza || ''),
           }
         }) as Transacao[]
 
@@ -226,7 +230,7 @@ export function useFinanceiro() {
         return {
           ...t,
           tipo_titulo: tipo?.titulo || '',
-          natureza: tipo?.natureza || '',
+          natureza: stripAccents(tipo?.natureza || ''),
         }
       }) as Transacao[]
 

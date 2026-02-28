@@ -256,10 +256,15 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
               label="Periodo Aquisitivo *"
               value={form.ferias_saldo_id || ''}
               onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value || null })}
-              options={periodosDisponiveis.map((p) => ({
-                value: p.id,
-                label: `${format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')} (${p.dias_restantes} dias restantes)`,
-              }))}
+              options={periodosDisponiveis.map((p) => {
+                let label = `${p.periodo_aquisitivo_inicio || '?'} a ${p.periodo_aquisitivo_fim || '?'} (${p.dias_restantes} dias restantes)`
+                try {
+                  const inicio = format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')
+                  const fim = format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')
+                  label = `${inicio} a ${fim} (${p.dias_restantes} dias restantes)`
+                } catch { /* use raw dates */ }
+                return { value: p.id, label }
+              })}
               placeholder="Selecione o periodo"
             />
           )}

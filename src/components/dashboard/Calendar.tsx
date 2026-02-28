@@ -127,9 +127,9 @@ export function DashboardCalendar() {
             <p className="text-sm text-cinza-preto mb-2">{popup.evento.titulo}</p>
             <div className="text-xs text-cinza-estrutural space-y-1">
               <p>
-                {format(new Date(popup.evento.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}
+                {(() => { try { return format(new Date(popup.evento.data_inicio + 'T00:00:00'), 'dd/MM/yyyy') } catch { return popup.evento.data_inicio } })()}
                 {popup.evento.data_fim && popup.evento.data_fim !== popup.evento.data_inicio && (
-                  <> ate {format(new Date(popup.evento.data_fim + 'T00:00:00'), 'dd/MM/yyyy')}</>
+                  <> ate {(() => { try { return format(new Date(popup.evento.data_fim + 'T00:00:00'), 'dd/MM/yyyy') } catch { return popup.evento.data_fim } })()}</>
                 )}
               </p>
               {popup.evento.dias && <p>{popup.evento.dias} dia{popup.evento.dias > 1 ? 's' : ''}</p>}
