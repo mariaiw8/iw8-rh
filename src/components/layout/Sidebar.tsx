@@ -13,6 +13,9 @@ import {
   Layers,
   Briefcase,
   Palmtree,
+  Calendar,
+  Building,
+  BarChart3,
   ClipboardList,
   DollarSign,
   FileBarChart,
@@ -27,6 +30,7 @@ interface NavItem {
   href?: string
   icon: React.ReactNode
   disabled?: boolean
+  groupKey?: string
   children?: { label: string; href: string; icon: React.ReactNode }[]
 }
 
@@ -44,6 +48,7 @@ const navItems: NavItem[] = [
   {
     label: 'Cadastros',
     icon: <Building2 size={20} />,
+    groupKey: 'cadastros',
     children: [
       { label: 'Unidades', href: '/cadastros?tab=unidades', icon: <MapPin size={18} /> },
       { label: 'Setores', href: '/cadastros?tab=setores', icon: <Layers size={18} /> },
@@ -53,8 +58,13 @@ const navItems: NavItem[] = [
   },
   {
     label: 'Ferias',
-    href: '/ferias',
     icon: <Palmtree size={20} />,
+    groupKey: 'ferias',
+    children: [
+      { label: 'Gestao de Ferias', href: '/ferias', icon: <Calendar size={18} /> },
+      { label: 'Ferias Coletivas', href: '/ferias/coletivas', icon: <Building size={18} /> },
+      { label: 'Saldos', href: '/ferias/saldos', icon: <BarChart3 size={18} /> },
+    ],
   },
   {
     label: 'Ocorrencias',
@@ -78,8 +88,17 @@ function SidebarContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const supabase = createClient()
-  const [cadastrosOpen, setCadastrosOpen] = useState(pathname.startsWith('/cadastros'))
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {}
+    if (pathname.startsWith('/cadastros')) initial.cadastros = true
+    if (pathname.startsWith('/ferias')) initial.ferias = true
+    return initial
+  })
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  function toggleGroup(key: string) {
+    setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -101,7 +120,6 @@ function SidebarContent() {
     const tab = params.get('tab')
     const currentTab = searchParams.get('tab')
     if (tab && currentTab) return tab === currentTab
-    // If no tab in URL, first child is active by default
     if (tab && !currentTab) return tab === 'unidades'
     return true
   }
@@ -116,12 +134,13 @@ function SidebarContent() {
       {/* Navigation */}
       <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
-          if (item.children) {
+          if (item.children && item.groupKey) {
             const anyChildActive = item.children.some((child) => isChildActive(child.href))
+            const isOpen = openGroups[item.groupKey] || false
             return (
               <div key={item.label}>
                 <button
-                  onClick={() => setCadastrosOpen(!cadastrosOpen)}
+                  onClick={() => toggleGroup(item.groupKey!)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-200 ${
                     anyChildActive
                       ? 'bg-azul text-white'
@@ -130,9 +149,9 @@ function SidebarContent() {
                 >
                   {item.icon}
                   <span className="flex-1 text-left">{item.label}</span>
-                  {cadastrosOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
-                {cadastrosOpen && (
+                {isOpen && (
                   <div className="ml-4 mt-1 space-y-1">
                     {item.children.map((child) => (
                       <Link

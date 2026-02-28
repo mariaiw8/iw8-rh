@@ -48,6 +48,7 @@ export interface Ferias {
   tipo: string
   status: string
   periodo_aquisitivo_id?: string
+  ferias_saldo_id?: string
   abono_pecuniario?: boolean
   dias_vendidos?: number
   observacao?: string
@@ -89,8 +90,54 @@ export interface FeriasColetivas {
   setor_id?: string
   unidade_nome?: string
   setor_nome?: string
+  total_afetados?: number
   observacao?: string
   created_at?: string
+}
+
+// Tipo para a view vw_ferias_gestao
+export interface FeriasGestao {
+  id: string
+  funcionario_id: string
+  ferias_saldo_id?: string
+  data_inicio: string
+  data_fim: string
+  dias: number
+  tipo: string
+  status: string
+  abono_pecuniario?: boolean
+  ferias_dias_vendidos?: number
+  observacao?: string
+  created_at?: string
+  nome_completo: string
+  codigo?: string
+  unidade?: string
+  setor?: string
+  periodo_aquisitivo_inicio?: string
+  periodo_aquisitivo_fim?: string
+  dias_direito?: number
+  dias_restantes?: number
+  saldo_status?: string
+}
+
+// Tipo para saldo com informações do funcionário
+export interface SaldoComFuncionario {
+  id: string
+  funcionario_id: string
+  periodo_aquisitivo_inicio: string
+  periodo_aquisitivo_fim: string
+  dias_direito: number
+  dias_gozados: number
+  dias_vendidos: number
+  dias_restantes: number
+  data_vencimento: string
+  status: string
+  nome_completo: string
+  codigo?: string
+  unidade?: string
+  setor?: string
+  unidade_id?: string
+  setor_id?: string
 }
 
 export function useFerias() {
@@ -111,6 +158,70 @@ export function useFerias() {
       nome: nameMap.get(f.funcionario_id!) || f.nome || 'Sem nome',
     }))
   }, [])
+
+  // === VIEWS ===
+
+  const loadFeriasGestao = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('vw_ferias_gestao')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      return (data || []) as FeriasGestao[]
+    } catch (err) {
+      console.error('Erro ao carregar gestao de ferias:', err)
+      // Fallback: query directly
+      try {
+        const { data } = await supabase
+          .from('ferias')
+          .select('*, funcionarios!inner(nome_completo, codigo, unidade_id, setor_id)')
+          .order('created_at', { ascending: false })
+        return (data || []).map((f: Record<string, unknown>) => {
+          const func = f.funcionarios as Record<string, string>
+          return {
+            ...f,
+            nome_completo: func?.nome_completo || '',
+            codigo: func?.codigo || '',
+          }
+        }) as FeriasGestao[]
+      } catch {
+        return []
+      }
+    }
+  }, [])
+
+  const loadFeriasColetvasResumo = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('vw_ferias_coletivas_resumo')
+        .select('*')
+        .order('data_inicio', { ascending: false })
+
+      if (error) throw error
+      return (data || []) as FeriasColetivas[]
+    } catch (err) {
+      console.error('Erro ao carregar ferias coletivas resumo:', err)
+      // Fallback
+      try {
+        const { data } = await supabase
+          .from('ferias_coletivas')
+          .select('*, unidades:unidade_id(titulo), setores:setor_id(titulo)')
+          .order('data_inicio', { ascending: false })
+        return (data || []).map((fc: Record<string, unknown>) => ({
+          ...fc,
+          unidade_nome: (fc.unidades as Record<string, string>)?.titulo || null,
+          setor_nome: (fc.setores as Record<string, string>)?.titulo || null,
+          total_afetados: 0,
+        })) as FeriasColetivas[]
+      } catch {
+        return []
+      }
+    }
+  }, [])
+
+  // === LEGACY LOADERS ===
 
   const loadFeriasAVencer = useCallback(async () => {
     setLoading(true)
@@ -179,6 +290,45 @@ export function useFerias() {
     }
   }, [])
 
+  // === SALDOS COM FUNCIONÁRIO (para página de saldos) ===
+
+  const loadAllSaldos = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('ferias_saldo')
+        .select('*, funcionarios!inner(nome_completo, codigo, unidade_id, setor_id, unidades:unidade_id(titulo), setores:setor_id(titulo))')
+        .order('data_vencimento', { ascending: true })
+
+      if (error) throw error
+      return (data || []).map((s: Record<string, unknown>) => {
+        const func = s.funcionarios as Record<string, unknown>
+        return {
+          id: s.id,
+          funcionario_id: s.funcionario_id,
+          periodo_aquisitivo_inicio: s.periodo_aquisitivo_inicio,
+          periodo_aquisitivo_fim: s.periodo_aquisitivo_fim,
+          dias_direito: s.dias_direito,
+          dias_gozados: s.dias_gozados,
+          dias_vendidos: s.dias_vendidos,
+          dias_restantes: s.dias_restantes,
+          data_vencimento: s.data_vencimento,
+          status: s.status,
+          nome_completo: (func?.nome_completo as string) || '',
+          codigo: (func?.codigo as string) || '',
+          unidade_id: (func?.unidade_id as string) || '',
+          setor_id: (func?.setor_id as string) || '',
+          unidade: ((func?.unidades as Record<string, string>)?.titulo) || '',
+          setor: ((func?.setores as Record<string, string>)?.titulo) || '',
+        }
+      }) as SaldoComFuncionario[]
+    } catch (err) {
+      console.error('Erro ao carregar todos os saldos:', err)
+      return []
+    }
+  }, [])
+
+  // === CRUD FÉRIAS ===
+
   const createFerias = useCallback(async (payload: {
     funcionario_id: string
     data_inicio: string
@@ -187,45 +337,37 @@ export function useFerias() {
     tipo?: string
     status?: string
     periodo_aquisitivo_id?: string
+    ferias_saldo_id?: string
     abono_pecuniario?: boolean
     dias_vendidos?: number
     observacao?: string
   }) => {
     try {
+      const insertPayload: Record<string, unknown> = {
+        funcionario_id: payload.funcionario_id,
+        data_inicio: payload.data_inicio,
+        data_fim: payload.data_fim,
+        dias: payload.dias,
+        tipo: payload.tipo || 'Individual',
+        status: payload.status || 'Programada',
+        abono_pecuniario: payload.abono_pecuniario || false,
+        dias_vendidos: payload.dias_vendidos || 0,
+        observacao: payload.observacao || null,
+      }
+
+      // Map periodo_aquisitivo_id to ferias_saldo_id
+      const saldoId = payload.ferias_saldo_id || payload.periodo_aquisitivo_id
+      if (saldoId) {
+        insertPayload.ferias_saldo_id = saldoId
+      }
+
       const { data, error } = await supabase
         .from('ferias')
-        .insert({
-          ...payload,
-          tipo: payload.tipo || 'Individual',
-          status: payload.status || 'Programada',
-        })
+        .insert(insertPayload)
         .select()
         .single()
 
       if (error) throw error
-
-      // Update saldo if periodo_aquisitivo_id is provided
-      if (payload.periodo_aquisitivo_id) {
-        const { data: saldo } = await supabase
-          .from('ferias_saldo')
-          .select('dias_gozados, dias_vendidos')
-          .eq('id', payload.periodo_aquisitivo_id)
-          .single()
-
-        if (saldo) {
-          const updatePayload: Record<string, number> = {
-            dias_gozados: (saldo.dias_gozados || 0) + payload.dias,
-          }
-          if (payload.dias_vendidos && payload.dias_vendidos > 0) {
-            updatePayload.dias_vendidos = (saldo.dias_vendidos || 0) + payload.dias_vendidos
-          }
-          await supabase
-            .from('ferias_saldo')
-            .update(updatePayload)
-            .eq('id', payload.periodo_aquisitivo_id)
-        }
-      }
-
       toast.success('Ferias registradas com sucesso')
       return data
     } catch (err) {
@@ -248,6 +390,23 @@ export function useFerias() {
     } catch (err) {
       console.error('Erro ao atualizar ferias:', err)
       toast.error('Erro ao atualizar ferias')
+      return false
+    }
+  }, [])
+
+  const cancelFerias = useCallback(async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('ferias')
+        .update({ status: 'Cancelada' })
+        .eq('id', id)
+
+      if (error) throw error
+      toast.success('Ferias canceladas com sucesso')
+      return true
+    } catch (err) {
+      console.error('Erro ao cancelar ferias:', err)
+      toast.error('Erro ao cancelar ferias')
       return false
     }
   }, [])
@@ -316,7 +475,8 @@ export function useFerias() {
     }
   }, [])
 
-  // Ferias Coletivas
+  // === FÉRIAS COLETIVAS ===
+
   const loadFeriasColetivas = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -362,6 +522,31 @@ export function useFerias() {
     }
   }, [])
 
+  const updateFeriasColetivas = useCallback(async (id: string, payload: {
+    titulo?: string
+    data_inicio?: string
+    data_fim?: string
+    dias?: number
+    unidade_id?: string | null
+    setor_id?: string | null
+    observacao?: string
+  }) => {
+    try {
+      const { error } = await supabase
+        .from('ferias_coletivas')
+        .update(payload)
+        .eq('id', id)
+
+      if (error) throw error
+      toast.success('Ferias coletivas atualizadas')
+      return true
+    } catch (err) {
+      console.error('Erro ao atualizar ferias coletivas:', err)
+      toast.error('Erro ao atualizar ferias coletivas')
+      return false
+    }
+  }, [])
+
   const deleteFeriasColetivas = useCallback(async (id: string) => {
     try {
       const { error } = await supabase
@@ -378,6 +563,54 @@ export function useFerias() {
       return false
     }
   }, [])
+
+  // Buscar funcionários afetados por coletiva
+  const loadFuncionariosColetiva = useCallback(async (dataInicio: string, dataFim: string, titulo: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('ferias')
+        .select('*, funcionarios!inner(nome_completo, codigo)')
+        .eq('tipo', 'Coletiva')
+        .eq('data_inicio', dataInicio)
+        .eq('data_fim', dataFim)
+        .like('observacao', `Férias coletivas: ${titulo}%`)
+
+      if (error) throw error
+      return (data || []).map((f: Record<string, unknown>) => {
+        const func = f.funcionarios as Record<string, string>
+        return {
+          ...f,
+          nome_completo: func?.nome_completo || '',
+          codigo: func?.codigo || '',
+        }
+      })
+    } catch (err) {
+      console.error('Erro ao carregar funcionarios da coletiva:', err)
+      return []
+    }
+  }, [])
+
+  // Contar funcionários que seriam afetados por filtros
+  const countFuncionariosAfetados = useCallback(async (unidadeId?: string | null, setorId?: string | null) => {
+    try {
+      let query = supabase
+        .from('funcionarios')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'Ativo')
+
+      if (unidadeId) query = query.eq('unidade_id', unidadeId)
+      if (setorId) query = query.eq('setor_id', setorId)
+
+      const { count, error } = await query
+      if (error) throw error
+      return count || 0
+    } catch (err) {
+      console.error('Erro ao contar funcionarios:', err)
+      return 0
+    }
+  }, [])
+
+  // === EXTRATO / SALDOS ===
 
   const loadExtrato = useCallback(async (funcionarioId: string) => {
     try {
@@ -428,22 +661,166 @@ export function useFerias() {
     }
   }, [])
 
+  // Gerar saldos para funcionários elegíveis
+  const gerarSaldos = useCallback(async (funcionarioIds: string[]) => {
+    let count = 0
+    for (const funcId of funcionarioIds) {
+      try {
+        // Buscar data de admissão
+        const { data: func } = await supabase
+          .from('funcionarios')
+          .select('data_admissao')
+          .eq('id', funcId)
+          .single()
+
+        if (!func?.data_admissao) continue
+
+        const admissao = new Date(func.data_admissao + 'T00:00:00')
+        const hoje = new Date()
+        let inicio = new Date(admissao)
+
+        // Gerar períodos aquisitivos faltantes
+        while (inicio < hoje) {
+          const fim = new Date(inicio)
+          fim.setFullYear(fim.getFullYear() + 1)
+          fim.setDate(fim.getDate() - 1)
+
+          const vencimento = new Date(fim)
+          vencimento.setMonth(vencimento.getMonth() + 11)
+
+          const periodoInicio = inicio.toISOString().split('T')[0]
+          const periodoFim = fim.toISOString().split('T')[0]
+
+          // Verificar se já existe
+          const { data: existing } = await supabase
+            .from('ferias_saldo')
+            .select('id')
+            .eq('funcionario_id', funcId)
+            .eq('periodo_aquisitivo_inicio', periodoInicio)
+            .maybeSingle()
+
+          if (!existing) {
+            const { error } = await supabase
+              .from('ferias_saldo')
+              .insert({
+                funcionario_id: funcId,
+                periodo_aquisitivo_inicio: periodoInicio,
+                periodo_aquisitivo_fim: periodoFim,
+                dias_direito: 30,
+                dias_gozados: 0,
+                dias_vendidos: 0,
+                dias_restantes: 30,
+                data_vencimento: vencimento.toISOString().split('T')[0],
+                status: 'Disponível',
+              })
+            if (!error) count++
+          }
+
+          inicio = new Date(fim)
+          inicio.setDate(inicio.getDate() + 1)
+        }
+      } catch (err) {
+        console.error(`Erro ao gerar saldo para ${funcId}:`, err)
+      }
+    }
+
+    if (count > 0) {
+      toast.success(`${count} saldo(s) gerado(s) com sucesso`)
+    } else {
+      toast.info('Nenhum saldo novo para gerar')
+    }
+    return count
+  }, [])
+
+  // Buscar funcionários elegíveis (sem saldo para período completo)
+  const loadFuncionariosElegiveis = useCallback(async () => {
+    try {
+      const { data: funcs, error } = await supabase
+        .from('funcionarios')
+        .select('id, nome_completo, codigo, data_admissao')
+        .eq('status', 'Ativo')
+        .not('data_admissao', 'is', null)
+        .order('nome_completo')
+
+      if (error) throw error
+      if (!funcs) return []
+
+      const hoje = new Date()
+      const elegiveis: { id: string; nome_completo: string; codigo?: string; periodos_faltantes: number }[] = []
+
+      for (const func of funcs) {
+        const admissao = new Date(func.data_admissao + 'T00:00:00')
+        let inicio = new Date(admissao)
+        let periodosFaltantes = 0
+
+        while (inicio < hoje) {
+          const fim = new Date(inicio)
+          fim.setFullYear(fim.getFullYear() + 1)
+          fim.setDate(fim.getDate() - 1)
+
+          if (fim <= hoje) {
+            const periodoInicio = inicio.toISOString().split('T')[0]
+            const { data: existing } = await supabase
+              .from('ferias_saldo')
+              .select('id')
+              .eq('funcionario_id', func.id)
+              .eq('periodo_aquisitivo_inicio', periodoInicio)
+              .maybeSingle()
+
+            if (!existing) periodosFaltantes++
+          }
+
+          inicio = new Date(fim)
+          inicio.setDate(inicio.getDate() + 1)
+        }
+
+        if (periodosFaltantes > 0) {
+          elegiveis.push({
+            id: func.id,
+            nome_completo: func.nome_completo,
+            codigo: func.codigo,
+            periodos_faltantes: periodosFaltantes,
+          })
+        }
+      }
+
+      return elegiveis
+    } catch (err) {
+      console.error('Erro ao buscar funcionarios elegiveis:', err)
+      return []
+    }
+  }, [])
+
   return {
     loading,
+    // Views
+    loadFeriasGestao,
+    loadFeriasColetvasResumo,
+    // Legacy
     loadFeriasAVencer,
     loadProximasFerias,
     loadFeriasFuncionario,
     loadSaldosFuncionario,
+    // CRUD
     createFerias,
     updateFerias,
+    cancelFerias,
     deleteFerias,
     venderFerias,
     updateSaldoDireito,
+    // Coletivas
     loadFeriasColetivas,
     createFeriasColetivas,
+    updateFeriasColetivas,
     deleteFeriasColetivas,
+    loadFuncionariosColetiva,
+    countFuncionariosAfetados,
+    // Extrato / Saldos
     loadExtrato,
     loadSaldos,
     loadPeriodosDisponiveis,
+    loadAllSaldos,
+    gerarSaldos,
+    loadFuncionariosElegiveis,
   }
 }
