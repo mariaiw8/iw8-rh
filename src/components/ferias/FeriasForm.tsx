@@ -16,6 +16,7 @@ interface FeriasFormProps {
   onSubmit: (data: FeriasFormData) => Promise<void>
   funcionarioId?: string
   funcionarioNome?: string
+  initialData?: Partial<FeriasFormData>
 }
 
 export interface FeriasFormData {
@@ -31,7 +32,7 @@ export interface FeriasFormData {
   observacao: string
 }
 
-export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionarioNome }: FeriasFormProps) {
+export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionarioNome, initialData }: FeriasFormProps) {
   const supabase = createClient()
   const [submitting, setSubmitting] = useState(false)
   const [funcionarios, setFuncionarios] = useState<{ value: string; label: string; sublabel: string }[]>([])
@@ -50,6 +51,24 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
     dias_vendidos: 0,
     observacao: '',
   })
+
+  // Reset form when modal opens / initialData changes
+  useEffect(() => {
+    if (open) {
+      setForm({
+        funcionario_id: funcionarioId || initialData?.funcionario_id || '',
+        data_inicio: initialData?.data_inicio || '',
+        data_fim: initialData?.data_fim || '',
+        dias: initialData?.dias || 0,
+        tipo: initialData?.tipo || 'Individual',
+        periodo_aquisitivo_id: initialData?.periodo_aquisitivo_id || initialData?.ferias_saldo_id || '',
+        ferias_saldo_id: initialData?.ferias_saldo_id || initialData?.periodo_aquisitivo_id || '',
+        abono_pecuniario: initialData?.abono_pecuniario || false,
+        dias_vendidos: initialData?.dias_vendidos || 0,
+        observacao: initialData?.observacao || '',
+      })
+    }
+  }, [open, funcionarioId, initialData])
 
   useEffect(() => {
     if (open && !funcionarioId) {
@@ -126,26 +145,13 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
         ...form,
         periodo_aquisitivo_id: form.ferias_saldo_id,
       })
-      setForm({
-        funcionario_id: funcionarioId || '',
-        data_inicio: '',
-        data_fim: '',
-        dias: 0,
-        tipo: 'Individual',
-        periodo_aquisitivo_id: '',
-        ferias_saldo_id: '',
-        abono_pecuniario: false,
-        dias_vendidos: 0,
-        observacao: '',
-      })
-      onClose()
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Adicionar Ferias" size="lg">
+    <Modal open={open} onClose={onClose} title={initialData ? 'Editar Ferias' : 'Adicionar Ferias'} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         {!funcionarioId ? (
           <Autocomplete
@@ -183,7 +189,6 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
             type="number"
             value={form.dias.toString()}
             onChange={(e) => setForm({ ...form, dias: parseInt(e.target.value) || 0 })}
-            disabled
           />
           <Select
             label="Tipo"
