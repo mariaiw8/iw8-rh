@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
   LayoutDashboard,
   Users,
@@ -48,6 +48,7 @@ const navItems: NavItem[] = [
       { label: 'Unidades', href: '/cadastros?tab=unidades', icon: <MapPin size={18} /> },
       { label: 'Setores', href: '/cadastros?tab=setores', icon: <Layers size={18} /> },
       { label: 'Funcoes', href: '/cadastros?tab=funcoes', icon: <Briefcase size={18} /> },
+      { label: 'Mot. Desligamento', href: '/cadastros?tab=motivos_desligamento', icon: <LogOut size={18} /> },
     ],
   },
   {
@@ -72,8 +73,9 @@ const navItems: NavItem[] = [
   },
 ]
 
-export function Sidebar() {
+function SidebarContent() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
   const supabase = createClient()
   const [cadastrosOpen, setCadastrosOpen] = useState(pathname.startsWith('/cadastros'))
@@ -91,6 +93,19 @@ export function Sidebar() {
     return pathname.startsWith(href.split('?')[0])
   }
 
+  function isChildActive(childHref: string) {
+    const [childPath, childQuery] = childHref.split('?')
+    if (pathname !== childPath) return false
+    if (!childQuery) return true
+    const params = new URLSearchParams(childQuery)
+    const tab = params.get('tab')
+    const currentTab = searchParams.get('tab')
+    if (tab && currentTab) return tab === currentTab
+    // If no tab in URL, first child is active by default
+    if (tab && !currentTab) return tab === 'unidades'
+    return true
+  }
+
   const sidebarContent = (
     <div className="flex flex-col h-full">
       {/* Logo */}
@@ -102,15 +117,13 @@ export function Sidebar() {
       <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => {
           if (item.children) {
-            const isChildActive = item.children.some((child) =>
-              pathname.startsWith(child.href.split('?')[0])
-            )
+            const anyChildActive = item.children.some((child) => isChildActive(child.href))
             return (
               <div key={item.label}>
                 <button
                   onClick={() => setCadastrosOpen(!cadastrosOpen)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-200 ${
-                    isChildActive
+                    anyChildActive
                       ? 'bg-azul text-white'
                       : 'text-cinza-branco hover:bg-white/10'
                   }`}
@@ -127,7 +140,7 @@ export function Sidebar() {
                         href={child.href}
                         onClick={() => setMobileOpen(false)}
                         className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors duration-200 ${
-                          pathname + (typeof window !== 'undefined' ? window.location.search : '') === child.href
+                          isChildActive(child.href)
                             ? 'bg-azul text-white border-l-2 border-laranja'
                             : 'text-cinza-branco/80 hover:bg-white/10'
                         }`}
@@ -219,5 +232,19 @@ export function Sidebar() {
         {sidebarContent}
       </aside>
     </>
+  )
+}
+
+export function Sidebar() {
+  return (
+    <Suspense fallback={
+      <aside className="hidden lg:block fixed left-0 top-0 w-64 h-screen bg-azul-noturno z-30">
+        <div className="flex items-center justify-center h-20 border-b border-white/10">
+          <img src="https://xrdrdpbhcygpnrmnjpjq.supabase.co/storage/v1/object/public/arquivos-rh/IW8_brancalaranja.png" alt="IW8" className="h-12" />
+        </div>
+      </aside>
+    }>
+      <SidebarContent />
+    </Suspense>
   )
 }

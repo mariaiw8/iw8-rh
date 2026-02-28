@@ -164,6 +164,7 @@ export function useFinanceiro() {
   }) => {
     setLoading(true)
     try {
+      // Try joined query first
       let query = supabase
         .from('transacoes')
         .select(`
@@ -183,9 +184,42 @@ export function useFinanceiro() {
         query = query.eq('tipo_transacao_id', filters.tipo_transacao_id)
       }
 
-      const { data, error } = await query
+      let { data, error } = await query
 
-      if (error) throw error
+      // Fallback: query without join if the relationship fails
+      if (error) {
+        let fallbackQuery = supabase
+          .from('transacoes')
+          .select('*')
+          .eq('funcionario_id', funcionarioId)
+          .order('data', { ascending: false })
+
+        if (filters?.data_inicio) fallbackQuery = fallbackQuery.gte('data', filters.data_inicio)
+        if (filters?.data_fim) fallbackQuery = fallbackQuery.lte('data', filters.data_fim)
+        if (filters?.tipo_transacao_id) fallbackQuery = fallbackQuery.eq('tipo_transacao_id', filters.tipo_transacao_id)
+
+        const fallback = await fallbackQuery
+        if (fallback.error) throw fallback.error
+        data = fallback.data
+
+        // Load tipos separately and map
+        const { data: tipos } = await supabase.from('tipos_transacao').select('id, titulo, natureza')
+        const tiposMap = new Map((tipos || []).map((t: Record<string, string>) => [t.id, t]))
+
+        let result = (data || []).map((t: Record<string, unknown>) => {
+          const tipo = tiposMap.get(t.tipo_transacao_id as string) as Record<string, string> | undefined
+          return {
+            ...t,
+            tipo_titulo: tipo?.titulo || '',
+            natureza: tipo?.natureza || '',
+          }
+        }) as Transacao[]
+
+        if (filters?.natureza && filters.natureza !== 'Todos') {
+          result = result.filter((t) => t.natureza === filters.natureza)
+        }
+        return result
+      }
 
       let result = (data || []).map((t: Record<string, unknown>) => {
         const tipo = t.tipos_transacao as Record<string, string> | null

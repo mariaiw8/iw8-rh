@@ -36,16 +36,32 @@ export function SetoreChart() {
   }, [])
 
   async function loadData() {
-    const { data: resumo } = await supabase
+    // Try the view first
+    const { data: resumo, error } = await supabase
       .from('vw_resumo_setores')
       .select('titulo, num_funcionarios')
       .order('num_funcionarios', { ascending: false })
       .limit(10)
 
-    if (resumo) {
+    if (!error && resumo && resumo.length > 0) {
       setData(resumo.map((r: Record<string, unknown>) => ({
         nome: (r.titulo as string)?.length > 15 ? (r.titulo as string).slice(0, 15) + '...' : (r.titulo as string),
         funcionarios: (r.num_funcionarios || 0) as number,
+      })))
+      return
+    }
+
+    // Fallback: query base tables
+    const { data: setores } = await supabase.from('setores').select('id, titulo')
+    const { data: funcs } = await supabase.from('funcionarios').select('setor_id').eq('status', 'Ativo')
+    if (setores && funcs) {
+      const counts: Record<string, { titulo: string; count: number }> = {}
+      setores.forEach((s: Record<string, string>) => { counts[s.id] = { titulo: s.titulo, count: 0 } })
+      funcs.forEach((f: Record<string, string>) => { if (f.setor_id && counts[f.setor_id]) counts[f.setor_id].count++ })
+      const sorted = Object.values(counts).filter(c => c.count > 0).sort((a, b) => b.count - a.count).slice(0, 10)
+      setData(sorted.map(s => ({
+        nome: s.titulo.length > 15 ? s.titulo.slice(0, 15) + '...' : s.titulo,
+        funcionarios: s.count,
       })))
     }
   }
@@ -63,7 +79,7 @@ export function SetoreChart() {
         </CardTitle>
       </CardHeader>
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <BarChart data={data} layout="vertical" margin={{ left: 10, right: 20 }}>
             <XAxis type="number" tick={{ fontSize: 12 }} />
             <YAxis type="category" dataKey="nome" tick={{ fontSize: 11 }} width={110} />
@@ -124,7 +140,7 @@ export function AdmissoesChart() {
         </CardTitle>
       </CardHeader>
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <LineChart data={data} margin={{ left: 0, right: 20 }}>
             <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
@@ -182,7 +198,7 @@ export function OcorrenciasChart() {
         </CardTitle>
       </CardHeader>
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <PieChart>
             <Pie
               data={data}

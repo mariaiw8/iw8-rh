@@ -8,13 +8,25 @@ import { Badge } from '@/components/ui/Badge'
 import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
+import { Modal } from '@/components/ui/Modal'
+import { Input } from '@/components/ui/Input'
 import { FeriasForm, type FeriasFormData } from '@/components/ferias/FeriasForm'
 import { FeriasColetivasForm, type FeriasColetivasFormData } from '@/components/ferias/FeriasColetivasForm'
+import { VenderFeriasForm } from '@/components/ferias/VenderFeriasForm'
 import { Select } from '@/components/ui/Select'
 import { useFerias, type FeriasAVencer, type ProximasFerias, type FeriasColetivas, type FeriasExtrato, type FeriasSaldo } from '@/hooks/useFerias'
 import { createClient } from '@/lib/supabase'
-import { Plus, AlertTriangle, Calendar, Users, Trash2, FileText, TrendingUp, TrendingDown, Clock, Ban } from 'lucide-react'
+import { Plus, AlertTriangle, Calendar, Users, Trash2, FileText, TrendingUp, TrendingDown, Clock, Ban, DollarSign } from 'lucide-react'
 import { format } from 'date-fns'
+
+function safeFormat(dateStr: string | null | undefined, fmt: string = 'dd/MM/yyyy'): string {
+  if (!dateStr) return '-'
+  try {
+    return format(new Date(dateStr + 'T00:00:00'), fmt)
+  } catch {
+    return dateStr
+  }
+}
 
 function getSituacaoStyle(situacao: string) {
   switch (situacao) {
@@ -56,6 +68,7 @@ export default function FeriasPage() {
     deleteFeriasColetivas,
     loadExtrato,
     loadSaldos,
+    venderFerias,
   } = useFerias()
 
   const [loading, setLoading] = useState(true)
@@ -71,6 +84,8 @@ export default function FeriasPage() {
   const [extrato, setExtrato] = useState<FeriasExtrato[]>([])
   const [saldos, setSaldos] = useState<FeriasSaldo[]>([])
   const [loadingExtrato, setLoadingExtrato] = useState(false)
+  const [showVenderForm, setShowVenderForm] = useState(false)
+  const [editingExtrato, setEditingExtrato] = useState<FeriasExtrato | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -175,6 +190,102 @@ export default function FeriasPage() {
     loadData()
   }
 
+  async function handleVender(periodoId: string, dias: number, valor?: number) {
+    const ok = await venderFerias(periodoId, dias)
+    if (ok && valor && valor > 0) {
+      const { data: saldoData } = await supabase
+        .from('ferias_saldo')
+        .select('periodo_aquisitivo_inicio, periodo_aquisitivo_fim')
+        .eq('id', periodoId)
+        .single()
+
+      const hoje = new Date().toISOString().split('T')[0]
+      const { data: feriasRec } = await supabase
+        .from('ferias')
+        .insert({
+          funcionario_id: selectedFuncionarioId,
+          ferias_saldo_id: periodoId,
+          data_inicio: hoje,
+          data_fim: hoje,
+          dias: 0,
+          abono_pecuniario: true,
+          dias_vendidos: dias,
+          status: 'Concluída',
+          tipo: 'Individual',
+        })
+        .select('id')
+        .single()
+
+      const { data: tipoVenda } = await supabase
+        .from('tipos_transacao')
+        .select('id')
+        .eq('titulo', 'Venda de Férias')
+        .maybeSingle()
+
+      if (tipoVenda && feriasRec) {
+        const inicio = saldoData?.periodo_aquisitivo_inicio || ''
+        const fim = saldoData?.periodo_aquisitivo_fim || ''
+        await supabase.from('transacoes').insert({
+          funcionario_id: selectedFuncionarioId,
+          tipo_transacao_id: tipoVenda.id,
+          valor: valor,
+          data: hoje,
+          descricao: `Venda de ${dias} dias de ferias — Periodo ${inicio} a ${fim}`,
+          origem_tabela: 'ferias',
+          origem_id: feriasRec.id,
+        })
+      }
+    }
+    if (ok && selectedFuncionarioId) {
+      loadExtratoData(selectedFuncionarioId)
+    }
+    return ok
+  }
+
+  async function handleSaveExtrato(item: FeriasExtrato, newData: { data?: string; dias?: number }) {
+    try {
+      if (item.tipo_movimento === 'CRÉDITO' && item.referencia_tabela === 'ferias_saldo') {
+        const updatePayload: Record<string, unknown> = {}
+        if (newData.dias !== undefined) updatePayload.dias_direito = newData.dias
+        if (Object.keys(updatePayload).length > 0) {
+          const { error } = await supabase
+            .from('ferias_saldo')
+            .update(updatePayload)
+            .eq('id', item.referencia_id)
+          if (error) throw error
+        }
+      } else if (item.referencia_tabela === 'ferias') {
+        const updatePayload: Record<string, unknown> = {}
+        if (newData.dias !== undefined) updatePayload.dias = newData.dias
+        if (newData.data !== undefined) updatePayload.data_inicio = newData.data
+        if (Object.keys(updatePayload).length > 0) {
+          const { error } = await supabase
+            .from('ferias')
+            .update(updatePayload)
+            .eq('id', item.referencia_id)
+          if (error) throw error
+        }
+      } else if (item.referencia_tabela === 'ocorrencias') {
+        const updatePayload: Record<string, unknown> = {}
+        if (newData.dias !== undefined) updatePayload.dias = newData.dias
+        if (newData.data !== undefined) updatePayload.data_inicio = newData.data
+        if (Object.keys(updatePayload).length > 0) {
+          const { error } = await supabase
+            .from('ocorrencias')
+            .update(updatePayload)
+            .eq('id', item.referencia_id)
+          if (error) throw error
+        }
+      }
+      toast.success('Movimentacao atualizada')
+      setEditingExtrato(null)
+      if (selectedFuncionarioId) loadExtratoData(selectedFuncionarioId)
+    } catch (err) {
+      console.error('Erro ao editar extrato:', err)
+      toast.error('Erro ao editar movimentacao')
+    }
+  }
+
   if (loading) {
     return (
       <PageContainer>
@@ -245,7 +356,7 @@ export default function FeriasPage() {
                   <TableCell>{f.periodo_aquisitivo}</TableCell>
                   <TableCell>{f.dias_restantes}</TableCell>
                   <TableCell>
-                    {format(new Date(f.data_vencimento + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {safeFormat(f.data_vencimento)}
                   </TableCell>
                   <TableCell>
                     {f.dias_para_vencer < 0
@@ -303,10 +414,10 @@ export default function FeriasPage() {
                   <TableCell>{f.unidade || '-'}</TableCell>
                   <TableCell>{f.setor || '-'}</TableCell>
                   <TableCell>
-                    {format(new Date(f.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {safeFormat(f.data_inicio)}
                   </TableCell>
                   <TableCell>
-                    {format(new Date(f.data_fim + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {safeFormat(f.data_fim)}
                   </TableCell>
                   <TableCell>{f.dias}</TableCell>
                   <TableCell>{getStatusBadge(f.status)}</TableCell>
@@ -354,8 +465,8 @@ export default function FeriasPage() {
               {feriasColetivas.map((fc) => (
                 <TableRow key={fc.id}>
                   <TableCell className="font-medium">{fc.titulo}</TableCell>
-                  <TableCell>{format(new Date(fc.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
-                  <TableCell>{format(new Date(fc.data_fim + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
+                  <TableCell>{safeFormat(fc.data_inicio)}</TableCell>
+                  <TableCell>{safeFormat(fc.data_fim)}</TableCell>
                   <TableCell>{fc.dias}</TableCell>
                   <TableCell>{fc.unidade_nome || 'Todas'}</TableCell>
                   <TableCell>{fc.setor_nome || 'Todos'}</TableCell>
@@ -378,12 +489,19 @@ export default function FeriasPage() {
       {/* Secao 4 - Extrato de Ferias */}
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle>
-            <div className="flex items-center gap-2">
-              <FileText size={18} className="text-azul-medio" />
-              Extrato de Ferias
-            </div>
-          </CardTitle>
+          <div className="flex items-center justify-between w-full">
+            <CardTitle>
+              <div className="flex items-center gap-2">
+                <FileText size={18} className="text-azul-medio" />
+                Extrato de Ferias
+              </div>
+            </CardTitle>
+            {selectedFuncionarioId && saldos.length > 0 && (
+              <Button variant="secondary" size="sm" onClick={() => setShowVenderForm(true)}>
+                <DollarSign size={14} /> Vender Ferias
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <div className="p-6 pt-0">
           {/* Seletor de funcionario */}
@@ -440,6 +558,7 @@ export default function FeriasPage() {
                     <h3 className="text-lg font-semibold text-cinza-preto mb-3 flex items-center gap-2">
                       <FileText size={16} />
                       Movimentacoes
+                      <span className="text-xs text-cinza-estrutural font-normal">(clique para editar)</span>
                     </h3>
                     {extrato.length === 0 ? (
                       <EmptyState
@@ -458,9 +577,13 @@ export default function FeriasPage() {
                         </TableHeader>
                         <TableBody>
                           {extrato.map((e, idx) => (
-                            <TableRow key={`${e.referencia_id}-${idx}`}>
+                            <TableRow
+                              key={`${e.referencia_id}-${idx}`}
+                              className="cursor-pointer hover:bg-gray-50"
+                              onClick={() => setEditingExtrato(e)}
+                            >
                               <TableCell>
-                                {format(new Date(e.data_movimento + 'T00:00:00'), 'dd/MM/yyyy')}
+                                {safeFormat(e.data_movimento)}
                               </TableCell>
                               <TableCell>
                                 {e.tipo_movimento === 'CRÉDITO' ? (
@@ -508,7 +631,7 @@ export default function FeriasPage() {
                             <div key={s.id} className="border border-gray-200 rounded-lg p-4">
                               <div className="flex items-center justify-between mb-2">
                                 <div className="font-medium text-cinza-preto">
-                                  {format(new Date(s.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a {format(new Date(s.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')}
+                                  {safeFormat(s.periodo_aquisitivo_inicio)} a {safeFormat(s.periodo_aquisitivo_fim)}
                                 </div>
                                 {getSaldoStatusBadge(s.status)}
                               </div>
@@ -531,7 +654,7 @@ export default function FeriasPage() {
                                 </div>
                                 <div>
                                   <span className="text-gray-500">Vencimento:</span>{' '}
-                                  <span className="font-medium">{format(new Date(s.data_vencimento + 'T00:00:00'), 'dd/MM/yyyy')}</span>
+                                  <span className="font-medium">{safeFormat(s.data_vencimento)}</span>
                                 </div>
                               </div>
                               {/* Barra de progresso */}
@@ -573,6 +696,80 @@ export default function FeriasPage() {
         onClose={() => setShowColetivasForm(false)}
         onSubmit={handleCreateColetivas}
       />
+      {selectedFuncionarioId && (
+        <VenderFeriasForm
+          open={showVenderForm}
+          onClose={() => setShowVenderForm(false)}
+          saldos={saldos}
+          onSubmit={handleVender}
+        />
+      )}
+
+      {/* Edit Extrato Modal */}
+      {editingExtrato && (
+        <EditExtratoModal
+          item={editingExtrato}
+          onClose={() => setEditingExtrato(null)}
+          onSave={handleSaveExtrato}
+        />
+      )}
     </PageContainer>
+  )
+}
+
+// We need toast import for the edit handler
+import { toast } from 'sonner'
+
+function EditExtratoModal({
+  item,
+  onClose,
+  onSave,
+}: {
+  item: FeriasExtrato
+  onClose: () => void
+  onSave: (item: FeriasExtrato, data: { data?: string; dias?: number }) => Promise<void>
+}) {
+  const [data, setData] = useState(item.data_movimento || '')
+  const [dias, setDias] = useState(Math.abs(item.dias))
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await onSave(item, { data, dias })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={true} onClose={onClose} title="Editar Movimentacao">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-gray-50 rounded-lg p-3 text-sm">
+          <p><strong>Tipo:</strong> {item.tipo_movimento}</p>
+          <p><strong>Descricao:</strong> {item.descricao}</p>
+          <p><strong>Tabela:</strong> {item.referencia_tabela}</p>
+        </div>
+        <Input
+          label="Data"
+          type="date"
+          value={data}
+          onChange={(e) => setData(e.target.value)}
+        />
+        <Input
+          label="Dias"
+          type="number"
+          value={dias.toString()}
+          onChange={(e) => setDias(parseInt(e.target.value) || 0)}
+        />
+        <div className="flex justify-end gap-3 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Salvando...' : 'Salvar'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }

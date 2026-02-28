@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 import { Select } from '@/components/ui/Select'
 import { Input } from '@/components/ui/Input'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/Table'
@@ -19,10 +20,10 @@ import { createClient } from '@/lib/supabase'
 import { format } from 'date-fns'
 import {
   Users, CalendarClock, Calendar, ClipboardList,
-  DollarSign, Cake, BarChart3, ArrowLeft, FileBarChart, Search,
+  DollarSign, Cake, BarChart3, ArrowLeft, FileBarChart, Search, AlertTriangle,
 } from 'lucide-react'
 
-type ReportType = 'lista' | 'ferias-vencer' | 'programacao-ferias' | 'ocorrencias' | 'folha' | 'aniversariantes' | 'resumo' | null
+type ReportType = 'lista' | 'ferias-vencer' | 'programacao-ferias' | 'ocorrencias' | 'folha' | 'aniversariantes' | 'resumo' | 'absenteismo' | null
 
 function formatDate(d: string) {
   if (!d) return '-'
@@ -35,6 +36,26 @@ function formatDate(d: string) {
 
 function formatCurrency(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+// Absenteismo types
+interface AbsenteismoMensal {
+  ano: number
+  mes: number
+  total_dias_ausentes: number
+  total_ocorrencias: number
+  total_funcionarios: number
+  taxa_absenteismo: number
+}
+
+interface AbsenteismoDetalhe {
+  funcionario_id: string
+  nome: string
+  setor: string
+  unidade: string
+  total_dias: number
+  total_ocorrencias: number
+  taxa: number
 }
 
 export default function RelatoriosPage() {
@@ -58,6 +79,11 @@ export default function RelatoriosPage() {
   const [filtroMes, setFiltroMes] = useState(String(new Date().getMonth() + 1))
   const [searchTerm, setSearchTerm] = useState('')
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null)
+
+  // Absenteismo specific state
+  const [absenteismoMensal, setAbsenteismoMensal] = useState<AbsenteismoMensal[]>([])
+  const [absenteismoResumo, setAbsenteismoResumo] = useState<{ taxa: number; funcionarios: number; diasPerdidos: number } | null>(null)
+  const [absenteismoDetalhe, setAbsenteismoDetalhe] = useState<AbsenteismoDetalhe[]>([])
 
   const filteredData = data.filter((row) => {
     if (!searchTerm) return true
@@ -160,12 +186,163 @@ export default function RelatoriosPage() {
           setData([result as unknown as Record<string, unknown>])
           break
         }
+        case 'absenteismo': {
+          await loadAbsenteismoReport()
+          break
+        }
       }
     } catch (err) {
       console.error('Erro ao carregar relatorio:', err)
     } finally {
       setReportLoading(false)
     }
+  }
+
+  async function loadAbsenteismoReport() {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
+
+    // Try loading monthly data from vw_absenteismo_mensal
+    const { data: mensal, error: mensalError } = await supabase
+      .from('vw_absenteismo_mensal')
+      .select('*')
+      .order('ano', { ascending: false })
+      .order('mes', { ascending: false })
+      .limit(12)
+
+    let mensalData: AbsenteismoMensal[] = []
+    if (!mensalError && mensal) {
+      mensalData = mensal as AbsenteismoMensal[]
+    } else {
+      // Fallback: compute monthly absenteismo from ocorrencias
+      const { data: totalAtivos } = await supabase.from('funcionarios').select('id', { count: 'exact', head: true }).eq('status', 'Ativo')
+      const totalFunc = totalAtivos?.length || (totalAtivos as unknown as { count: number })?.count || 1
+
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(currentYear, currentMonth - 1 - i, 1)
+        const ano = d.getFullYear()
+        const mes = d.getMonth() + 1
+        const inicio = `${ano}-${String(mes).padStart(2, '0')}-01`
+        const lastDay = new Date(ano, mes, 0).getDate()
+        const fim = `${ano}-${String(mes).padStart(2, '0')}-${lastDay}`
+
+        const { data: ocs } = await supabase
+          .from('ocorrencias')
+          .select('dias, funcionario_id')
+          .eq('absenteismo', true)
+          .gte('data_inicio', inicio)
+          .lte('data_inicio', fim)
+
+        const totalDias = (ocs || []).reduce((s: number, o: Record<string, number>) => s + (o.dias || 0), 0)
+        const funcIds = new Set((ocs || []).map((o: Record<string, string>) => o.funcionario_id))
+        const diasUteis = lastDay * 0.72 // approximate working days
+        const taxa = totalFunc > 0 && diasUteis > 0 ? (totalDias / (totalFunc * diasUteis)) * 100 : 0
+
+        mensalData.push({
+          ano, mes,
+          total_funcionarios: funcIds.size,
+          total_dias_ausentes: totalDias,
+          total_ocorrencias: (ocs || []).length,
+          taxa_absenteismo: Math.round(taxa * 100) / 100,
+        })
+      }
+      mensalData.reverse()
+    }
+    setAbsenteismoMensal(mensalData)
+
+    // Current month summary
+    const currentMonthData = mensalData.find((m) => m.ano === currentYear && m.mes === currentMonth)
+    if (currentMonthData) {
+      setAbsenteismoResumo({
+        taxa: currentMonthData.taxa_absenteismo || 0,
+        funcionarios: currentMonthData.total_funcionarios || 0,
+        diasPerdidos: currentMonthData.total_dias_ausentes || 0,
+      })
+    } else {
+      setAbsenteismoResumo({ taxa: 0, funcionarios: 0, diasPerdidos: 0 })
+    }
+
+    // Try loading detailed data from vw_absenteismo
+    let detalheQuery = supabase.from('vw_absenteismo').select('*')
+    if (filtroUnidade) {
+      detalheQuery = detalheQuery.eq('unidade_id', filtroUnidade)
+    }
+    if (filtroSetor) {
+      detalheQuery = detalheQuery.eq('setor_id', filtroSetor)
+    }
+
+    const { data: detalhe, error: detalheError } = await detalheQuery.order('total_dias', { ascending: false })
+
+    let detalheRows: Record<string, unknown>[] = []
+    if (!detalheError && detalhe) {
+      detalheRows = detalhe
+    } else {
+      // Fallback: compute detail from ocorrencias + funcionarios
+      let ocsQuery = supabase
+        .from('ocorrencias')
+        .select('funcionario_id, dias')
+        .eq('absenteismo', true)
+
+      const { data: ocs } = await ocsQuery
+      if (ocs && ocs.length > 0) {
+        const byFunc: Record<string, { totalDias: number; totalOcs: number }> = {}
+        ocs.forEach((o: Record<string, unknown>) => {
+          const fid = o.funcionario_id as string
+          if (!byFunc[fid]) byFunc[fid] = { totalDias: 0, totalOcs: 0 }
+          byFunc[fid].totalDias += (o.dias as number) || 0
+          byFunc[fid].totalOcs++
+        })
+
+        const funcIds = Object.keys(byFunc)
+        const { data: funcs } = await supabase
+          .from('funcionarios')
+          .select('id, nome_completo, setor_id, unidade_id')
+          .in('id', funcIds)
+
+        const { data: setoresData } = await supabase.from('setores').select('id, titulo')
+        const { data: unidadesData } = await supabase.from('unidades').select('id, titulo')
+        const setoresMap = new Map((setoresData || []).map((s: Record<string, string>) => [s.id, s.titulo]))
+        const unidadesMap = new Map((unidadesData || []).map((u: Record<string, string>) => [u.id, u.titulo]))
+
+        detalheRows = (funcs || [])
+          .filter((f: Record<string, string>) => {
+            if (filtroUnidade && f.unidade_id !== filtroUnidade) return false
+            if (filtroSetor && f.setor_id !== filtroSetor) return false
+            return true
+          })
+          .map((f: Record<string, string>) => ({
+            funcionario_id: f.id,
+            nome: f.nome_completo,
+            setor: setoresMap.get(f.setor_id) || '',
+            unidade: unidadesMap.get(f.unidade_id) || '',
+            total_dias: byFunc[f.id]?.totalDias || 0,
+            total_ocorrencias: byFunc[f.id]?.totalOcs || 0,
+            taxa: 0,
+          }))
+          .sort((a, b) => (b.total_dias as number) - (a.total_dias as number))
+      }
+    }
+
+    setAbsenteismoDetalhe(detalheRows.map((d: Record<string, unknown>) => ({
+      funcionario_id: (d.funcionario_id || d.id || '') as string,
+      nome: (d.nome || d.funcionario_nome || d.nome_completo || '') as string,
+      setor: (d.setor || d.setor_titulo || '') as string,
+      unidade: (d.unidade || d.unidade_titulo || '') as string,
+      total_dias: (d.total_dias || d.dias_ausentes || 0) as number,
+      total_ocorrencias: (d.total_ocorrencias || d.ocorrencias || 0) as number,
+      taxa: (d.taxa || d.taxa_absenteismo || 0) as number,
+    })))
+
+    // Set data for the table export
+    setData(detalheRows.map((d: Record<string, unknown>) => ({
+      nome: (d.nome || d.funcionario_nome || d.nome_completo || '') as string,
+      setor: (d.setor || d.setor_titulo || '') as string,
+      unidade: (d.unidade || d.unidade_titulo || '') as string,
+      total_dias: (d.total_dias || d.dias_ausentes || 0) as number,
+      total_ocorrencias: (d.total_ocorrencias || d.ocorrencias || 0) as number,
+      taxa: (d.taxa || d.taxa_absenteismo || 0) as number,
+    })))
   }
 
   function handleSearchChange(value: string) {
@@ -244,6 +421,15 @@ export default function RelatoriosPage() {
           { key: 'absenteismo', header: 'Absenteismo' },
           { key: 'folhaTotal', header: 'Folha Total' },
         ]
+      case 'absenteismo':
+        return [
+          { key: 'nome', header: 'Funcionario' },
+          { key: 'setor', header: 'Setor' },
+          { key: 'unidade', header: 'Unidade' },
+          { key: 'total_dias', header: 'Dias Ausentes' },
+          { key: 'total_ocorrencias', header: 'Ocorrencias' },
+          { key: 'taxa', header: 'Taxa (%)' },
+        ]
       default:
         return []
     }
@@ -258,6 +444,7 @@ export default function RelatoriosPage() {
       case 'folha': return 'Folha de Pagamento Atual'
       case 'aniversariantes': return 'Aniversariantes'
       case 'resumo': return 'Resumo de Indicadores'
+      case 'absenteismo': return 'Absenteismo'
       default: return 'Relatorio'
     }
   }
@@ -331,12 +518,185 @@ export default function RelatoriosPage() {
             icon={<BarChart3 size={24} />}
             onClick={() => { resetFilters(); setActiveReport('resumo') }}
           />
+          <ReportCard
+            title="Absenteismo"
+            description="Taxa de absenteismo, dias perdidos, grafico mensal e ranking por funcionario"
+            icon={<AlertTriangle size={24} />}
+            onClick={() => { resetFilters(); setActiveReport('absenteismo') }}
+          />
         </div>
       </PageContainer>
     )
   }
 
-  // Report detail view
+  // Absenteismo report has a special layout
+  if (activeReport === 'absenteismo') {
+    return (
+      <PageContainer>
+        <div className="mb-6 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => { setActiveReport(null); setData([]); setAbsenteismoMensal([]); setAbsenteismoDetalhe([]); setAbsenteismoResumo(null) }}>
+              <ArrowLeft size={16} /> Voltar
+            </Button>
+            <h2 className="text-xl font-bold text-cinza-preto">Absenteismo</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <PrintButton />
+            <ExportButton data={filteredData} columns={getColumns()} filename={getFilename()} />
+          </div>
+        </div>
+
+        {/* Filters */}
+        <Card className="mb-6 print:hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Select
+              label="Unidade"
+              options={unidades}
+              placeholder="Todas"
+              value={filtroUnidade}
+              onChange={(e) => setFiltroUnidade(e.target.value)}
+            />
+            <Select
+              label="Setor"
+              options={setores}
+              placeholder="Todos"
+              value={filtroSetor}
+              onChange={(e) => setFiltroSetor(e.target.value)}
+            />
+          </div>
+          <div className="mt-4 flex gap-2">
+            <Button size="sm" onClick={() => loadReport('absenteismo')}>
+              <Search size={14} /> Gerar Relatorio
+            </Button>
+            <Button variant="ghost" size="sm" onClick={resetFilters}>
+              Limpar Filtros
+            </Button>
+          </div>
+        </Card>
+
+        {reportLoading ? (
+          <TableSkeleton rows={10} />
+        ) : (
+          <>
+            {/* Summary Cards */}
+            {absenteismoResumo && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                <Card>
+                  <div className="text-center">
+                    <p className="text-sm text-cinza-estrutural mb-1">Taxa de Absenteismo (mes atual)</p>
+                    <p className="text-3xl font-bold text-laranja">{Number(absenteismoResumo.taxa).toFixed(1)}%</p>
+                  </div>
+                </Card>
+                <Card>
+                  <div className="text-center">
+                    <p className="text-sm text-cinza-estrutural mb-1">Funcionarios Ausentes</p>
+                    <p className="text-3xl font-bold text-azul-medio">{absenteismoResumo.funcionarios}</p>
+                  </div>
+                </Card>
+                <Card>
+                  <div className="text-center">
+                    <p className="text-sm text-cinza-estrutural mb-1">Total Dias Perdidos</p>
+                    <p className="text-3xl font-bold text-red-600">{absenteismoResumo.diasPerdidos}</p>
+                  </div>
+                </Card>
+              </div>
+            )}
+
+            {/* Monthly Chart (bar chart using CSS) */}
+            {absenteismoMensal.length > 0 && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle>
+                    <div className="flex items-center gap-2">
+                      <BarChart3 size={18} className="text-azul-medio" />
+                      Taxa de Absenteismo - Ultimos 12 Meses
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <div className="p-4">
+                  <div className="flex items-end gap-2 h-48">
+                    {[...absenteismoMensal].reverse().map((m, idx) => {
+                      const maxTaxa = Math.max(...absenteismoMensal.map((x) => Number(x.taxa_absenteismo) || 0), 1)
+                      const height = maxTaxa > 0 ? (Number(m.taxa_absenteismo) / maxTaxa) * 100 : 0
+                      const mesLabel = meses[(m.mes || 1) - 1]?.label?.slice(0, 3) || ''
+                      return (
+                        <div key={`${m.ano}-${m.mes}`} className="flex-1 flex flex-col items-center gap-1">
+                          <span className="text-[10px] text-cinza-estrutural">{Number(m.taxa_absenteismo || 0).toFixed(1)}%</span>
+                          <div
+                            className="w-full bg-laranja/80 rounded-t transition-all hover:bg-laranja"
+                            style={{ height: `${Math.max(height, 2)}%` }}
+                            title={`${mesLabel}/${m.ano}: ${Number(m.taxa_absenteismo || 0).toFixed(1)}%`}
+                          />
+                          <span className="text-[10px] text-cinza-estrutural">{mesLabel}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {/* Detail Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Users size={18} className="text-laranja" />
+                    Ranking por Funcionario
+                    {absenteismoDetalhe.length > 0 && (
+                      <Badge variant="neutral">{absenteismoDetalhe.length}</Badge>
+                    )}
+                  </div>
+                </CardTitle>
+              </CardHeader>
+              {absenteismoDetalhe.length === 0 ? (
+                <EmptyState
+                  icon={<AlertTriangle size={48} />}
+                  title="Nenhum dado encontrado"
+                  description="Use os filtros acima e clique em 'Gerar Relatorio' para visualizar os dados de absenteismo."
+                />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>#</TableHead>
+                      <TableHead>Funcionario</TableHead>
+                      <TableHead>Setor</TableHead>
+                      <TableHead>Unidade</TableHead>
+                      <TableHead>Dias Ausentes</TableHead>
+                      <TableHead>Ocorrencias</TableHead>
+                      <TableHead>Taxa (%)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {absenteismoDetalhe.map((d, i) => (
+                      <TableRow key={d.funcionario_id || i}>
+                        <TableCell className="font-medium text-cinza-estrutural">{i + 1}</TableCell>
+                        <TableCell className="font-medium">{d.nome}</TableCell>
+                        <TableCell>{d.setor || '-'}</TableCell>
+                        <TableCell>{d.unidade || '-'}</TableCell>
+                        <TableCell>
+                          <span className="font-semibold text-red-600">{d.total_dias}</span>
+                        </TableCell>
+                        <TableCell>{d.total_ocorrencias}</TableCell>
+                        <TableCell>
+                          <span className={`font-medium ${Number(d.taxa) > 5 ? 'text-red-600' : Number(d.taxa) > 2 ? 'text-amber-600' : 'text-green-600'}`}>
+                            {Number(d.taxa).toFixed(1)}%
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </Card>
+          </>
+        )}
+      </PageContainer>
+    )
+  }
+
+  // Report detail view (standard reports)
   const columns = getColumns()
 
   return (

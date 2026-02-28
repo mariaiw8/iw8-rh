@@ -25,6 +25,7 @@ import { z } from 'zod'
 interface Funcionario {
   id: string
   nome: string
+  apelido?: string
   codigo?: string
   cpf?: string
   status: string
@@ -95,6 +96,7 @@ export default function FuncionariosPage() {
         funcData = (tableRes.data || []).map((f: Record<string, unknown>) => ({
           id: f.id as string,
           nome: (f.nome_completo || f.nome) as string,
+          apelido: (f.apelido as string) || undefined,
           codigo: f.codigo as string,
           cpf: f.cpf as string,
           status: (f.status as string) || 'Ativo',
@@ -110,6 +112,7 @@ export default function FuncionariosPage() {
         funcData = (viewRes.data || []).map((f: Record<string, unknown>) => ({
           id: f.id as string,
           nome: f.nome as string,
+          apelido: (f.apelido as string) || undefined,
           codigo: (f.codigo as string) || '',
           cpf: f.cpf as string,
           status: (f.status as string) || 'Ativo',
@@ -147,6 +150,7 @@ export default function FuncionariosPage() {
       if (search) {
         const s = search.toLowerCase()
         const match = f.nome?.toLowerCase().includes(s) ||
+          f.apelido?.toLowerCase().includes(s) ||
           f.codigo?.toLowerCase().includes(s) ||
           f.cpf?.toLowerCase().includes(s)
         if (!match) return false
@@ -258,7 +262,10 @@ export default function FuncionariosPage() {
                         <TableCell>
                           <Avatar src={f.foto_url} name={f.nome} size="sm" />
                         </TableCell>
-                        <TableCell className="font-medium">{f.nome}</TableCell>
+                        <TableCell className="font-medium">
+                          {f.nome}
+                          {f.apelido && <span className="text-cinza-estrutural font-normal ml-1">({f.apelido})</span>}
+                        </TableCell>
                         <TableCell>{f.codigo || '-'}</TableCell>
                         <TableCell>{f.setor_titulo || '-'}</TableCell>
                         <TableCell>{f.funcao_titulo || '-'}</TableCell>

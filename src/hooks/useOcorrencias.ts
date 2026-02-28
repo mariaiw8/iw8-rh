@@ -30,6 +30,7 @@ export interface Ocorrencia {
   observacao?: string
   descontar_ferias?: boolean
   ferias_saldo_id?: string
+  absenteismo?: boolean
   created_at?: string
 }
 
@@ -200,6 +201,57 @@ export function useOcorrencias() {
     }
   }, [])
 
+  // Helper to manage financial transaction for an ocorrencia
+  async function syncTransacao(ocorrencia: { id: string; funcionario_id: string; valor?: number | null; data_inicio: string; descricao?: string; tipo_ocorrencia_id: string }) {
+    const valor = ocorrencia.valor || 0
+
+    // Try to find existing transaction
+    const { data: transExistente } = await supabase
+      .from('transacoes')
+      .select('id')
+      .eq('origem_tabela', 'ocorrencias')
+      .eq('origem_id', ocorrencia.id)
+      .maybeSingle()
+
+    if (transExistente && valor > 0) {
+      // Update existing transaction
+      // Get tipo ocorrencia title for description
+      const { data: tipoOc } = await supabase.from('tipos_ocorrencia').select('titulo').eq('id', ocorrencia.tipo_ocorrencia_id).single()
+      const tipoTitulo = tipoOc?.titulo || ''
+
+      await supabase.from('transacoes').update({
+        valor: valor,
+        data: ocorrencia.data_inicio,
+        descricao: `Ocorrencia: ${tipoTitulo} — ${ocorrencia.descricao || ''}`,
+      }).eq('id', transExistente.id)
+    } else if (transExistente && valor <= 0) {
+      // Delete transaction if valor is now 0
+      await supabase.from('transacoes').delete().eq('id', transExistente.id)
+    } else if (!transExistente && valor > 0) {
+      // Create new transaction
+      const { data: tipoTransacao } = await supabase
+        .from('tipos_transacao')
+        .select('id')
+        .eq('titulo', 'Ocorrência com Valor')
+        .maybeSingle()
+
+      if (tipoTransacao) {
+        const { data: tipoOc } = await supabase.from('tipos_ocorrencia').select('titulo').eq('id', ocorrencia.tipo_ocorrencia_id).single()
+        const tipoTitulo = tipoOc?.titulo || ''
+
+        await supabase.from('transacoes').insert({
+          funcionario_id: ocorrencia.funcionario_id,
+          tipo_transacao_id: tipoTransacao.id,
+          valor: valor,
+          data: ocorrencia.data_inicio,
+          descricao: `Ocorrencia: ${tipoTitulo} — ${ocorrencia.descricao || ''}`,
+          origem_tabela: 'ocorrencias',
+          origem_id: ocorrencia.id,
+        })
+      }
+    }
+  }
+
   const createOcorrencia = useCallback(async (payload: {
     funcionario_id: string
     tipo_ocorrencia_id: string
@@ -212,6 +264,7 @@ export function useOcorrencias() {
     observacao?: string
     descontar_ferias?: boolean
     ferias_saldo_id?: string
+    absenteismo?: boolean
   }) => {
     try {
       const { data, error } = await supabase
@@ -219,11 +272,25 @@ export function useOcorrencias() {
         .insert({
           ...payload,
           dias: payload.dias || 1,
+          absenteismo: payload.absenteismo || false,
         })
         .select()
         .single()
 
       if (error) throw error
+
+      // If has value, create financial transaction
+      if (data && payload.valor && payload.valor > 0) {
+        await syncTransacao({
+          id: data.id,
+          funcionario_id: payload.funcionario_id,
+          valor: payload.valor,
+          data_inicio: payload.data_inicio,
+          descricao: payload.descricao,
+          tipo_ocorrencia_id: payload.tipo_ocorrencia_id,
+        })
+      }
+
       toast.success('Ocorrencia registrada com sucesso')
       return data
     } catch (err) {
@@ -241,6 +308,19 @@ export function useOcorrencias() {
         .eq('id', id)
 
       if (error) throw error
+
+      // Sync financial transaction
+      if (payload.funcionario_id && payload.data_inicio && payload.tipo_ocorrencia_id) {
+        await syncTransacao({
+          id,
+          funcionario_id: payload.funcionario_id,
+          valor: payload.valor,
+          data_inicio: payload.data_inicio,
+          descricao: payload.descricao,
+          tipo_ocorrencia_id: payload.tipo_ocorrencia_id,
+        })
+      }
+
       toast.success('Ocorrencia atualizada')
       return true
     } catch (err) {
@@ -252,6 +332,9 @@ export function useOcorrencias() {
 
   const deleteOcorrencia = useCallback(async (id: string) => {
     try {
+      // Delete linked transaction first
+      await supabase.from('transacoes').delete().eq('origem_tabela', 'ocorrencias').eq('origem_id', id)
+
       const { error } = await supabase
         .from('ocorrencias')
         .delete()

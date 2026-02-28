@@ -6,17 +6,19 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import type { FeriasSaldo } from '@/hooks/useFerias'
+import { format } from 'date-fns'
 
 interface VenderFeriasFormProps {
   open: boolean
   onClose: () => void
   saldos: FeriasSaldo[]
-  onSubmit: (periodoId: string, dias: number) => Promise<boolean>
+  onSubmit: (periodoId: string, dias: number, valor?: number) => Promise<boolean>
 }
 
 export function VenderFeriasForm({ open, onClose, saldos, onSubmit }: VenderFeriasFormProps) {
   const [periodoId, setPeriodoId] = useState('')
   const [dias, setDias] = useState(1)
+  const [valor, setValor] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
   const saldosDisponiveis = saldos.filter((s) => s.dias_restantes > 0 && (s.dias_vendidos || 0) < 10)
@@ -24,15 +26,28 @@ export function VenderFeriasForm({ open, onClose, saldos, onSubmit }: VenderFeri
   const selectedSaldo = saldos.find((s) => s.id === periodoId)
   const maxDias = selectedSaldo ? Math.min(10 - (selectedSaldo.dias_vendidos || 0), selectedSaldo.dias_restantes) : 10
 
+  function formatPeriodoLabel(s: FeriasSaldo) {
+    const inicio = s.periodo_aquisitivo_inicio || s.periodo_inicio || ''
+    const fim = s.periodo_aquisitivo_fim || s.periodo_fim || ''
+    let label = ''
+    try {
+      label = `${format(new Date(inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(fim + 'T00:00:00'), 'dd/MM/yyyy')}`
+    } catch {
+      label = `${inicio} a ${fim}`
+    }
+    return `${label} — ${s.dias_restantes} dias disponiveis (${s.dias_vendidos || 0} ja vendidos)`
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!periodoId || dias < 1) return
     setSubmitting(true)
     try {
-      const ok = await onSubmit(periodoId, dias)
+      const ok = await onSubmit(periodoId, dias, valor || undefined)
       if (ok) {
         setPeriodoId('')
         setDias(1)
+        setValor(null)
         onClose()
       }
     } finally {
@@ -53,7 +68,7 @@ export function VenderFeriasForm({ open, onClose, saldos, onSubmit }: VenderFeri
           onChange={(e) => setPeriodoId(e.target.value)}
           options={saldosDisponiveis.map((s) => ({
             value: s.id,
-            label: `${s.periodo_inicio.slice(0, 10)} a ${s.periodo_fim.slice(0, 10)} — ${s.dias_restantes} dias restantes (${s.dias_vendidos || 0} ja vendidos)`,
+            label: formatPeriodoLabel(s),
           }))}
           placeholder="Selecione o periodo"
         />
@@ -63,6 +78,14 @@ export function VenderFeriasForm({ open, onClose, saldos, onSubmit }: VenderFeri
           type="number"
           value={dias.toString()}
           onChange={(e) => setDias(Math.min(maxDias, Math.max(1, parseInt(e.target.value) || 1)))}
+        />
+
+        <Input
+          label="Valor (R$)"
+          type="number"
+          value={valor?.toString() || ''}
+          onChange={(e) => setValor(e.target.value ? parseFloat(e.target.value) : null)}
+          placeholder="0,00"
         />
 
         <div className="flex justify-end gap-3 pt-2">

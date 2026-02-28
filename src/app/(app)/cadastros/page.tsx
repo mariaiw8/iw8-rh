@@ -14,7 +14,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { TableSkeleton } from '@/components/ui/LoadingSkeleton'
 import { createClient } from '@/lib/supabase'
 import { SearchInput } from '@/components/ui/SearchInput'
-import { Plus, Pencil, Trash2, MapPin, Layers, Briefcase, Clock, Filter } from 'lucide-react'
+import { Plus, Pencil, Trash2, MapPin, Layers, Briefcase, Clock, Filter, LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -58,9 +58,15 @@ const funcaoSchema = z.object({
   setor_id: z.string().min(1, 'Setor obrigatorio'),
 })
 
+const motivoDesligamentoSchema = z.object({
+  titulo: z.string().min(1, 'Titulo obrigatorio'),
+  descricao: z.string().optional(),
+})
+
 type UnidadeForm = z.infer<typeof unidadeSchema>
 type SetorForm = z.infer<typeof setorSchema>
 type FuncaoForm = z.infer<typeof funcaoSchema>
+type MotivoDesligamentoForm = z.infer<typeof motivoDesligamentoSchema>
 
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11)
@@ -128,7 +134,7 @@ function formatWeeklyHours(data: Record<string, unknown>): string | null {
   return `${hours.toString().replace('.', ',')}h Semanais`
 }
 
-type Tab = 'unidades' | 'setores' | 'funcoes'
+type Tab = 'unidades' | 'setores' | 'funcoes' | 'motivos_desligamento'
 
 export default function CadastrosPageWrapper() {
   return (
@@ -148,6 +154,7 @@ function CadastrosPage() {
   const [unidades, setUnidades] = useState<Record<string, unknown>[]>([])
   const [setores, setSetores] = useState<Record<string, unknown>[]>([])
   const [funcoes, setFuncoes] = useState<Record<string, unknown>[]>([])
+  const [motivosDesligamento, setMotivosDesligamento] = useState<Record<string, unknown>[]>([])
 
   // Modal states
   const [modalOpen, setModalOpen] = useState(false)
@@ -199,6 +206,10 @@ function CadastrosPage() {
       } else {
         setFuncoes(funRes.data || [])
       }
+
+      // Load motivos de desligamento
+      const { data: motivos } = await supabase.from('motivos_desligamento').select('*').order('titulo')
+      setMotivosDesligamento(motivos || [])
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
       toast.error('Erro ao carregar dados')
@@ -263,6 +274,7 @@ function CadastrosPage() {
           { key: 'unidades' as Tab, label: 'Unidades', icon: <MapPin size={16} /> },
           { key: 'setores' as Tab, label: 'Setores', icon: <Layers size={16} /> },
           { key: 'funcoes' as Tab, label: 'Funcoes', icon: <Briefcase size={16} /> },
+          { key: 'motivos_desligamento' as Tab, label: 'Motivos Desligamento', icon: <LogOut size={16} /> },
         ].map((t) => (
           <button
             key={t.key}
@@ -284,12 +296,14 @@ function CadastrosPage() {
             {tab === 'unidades' && 'Unidades'}
             {tab === 'setores' && 'Setores'}
             {tab === 'funcoes' && 'Funcoes'}
+            {tab === 'motivos_desligamento' && 'Motivos de Desligamento'}
           </h3>
           <Button onClick={openNew} size="sm">
             <Plus size={16} />
             {tab === 'unidades' && 'Nova Unidade'}
             {tab === 'setores' && 'Novo Setor'}
             {tab === 'funcoes' && 'Nova Funcao'}
+            {tab === 'motivos_desligamento' && 'Novo Motivo'}
           </Button>
         </div>
 
@@ -364,6 +378,9 @@ function CadastrosPage() {
             {tab === 'funcoes' && (
               <FuncoesTable data={filteredFuncoes} onEdit={openEdit} onDelete={(id) => handleDelete('funcoes', id)} />
             )}
+            {tab === 'motivos_desligamento' && (
+              <MotivosDesligamentoTable data={motivosDesligamento} onEdit={openEdit} onDelete={(id) => handleDelete('motivos_desligamento', id)} />
+            )}
           </>
         )}
       </Card>
@@ -398,6 +415,15 @@ function CadastrosPage() {
           supabase={supabase}
           onSaved={() => { setModalOpen(false); loadData() }}
           setores={setores}
+        />
+      )}
+      {tab === 'motivos_desligamento' && (
+        <MotivoDesligamentoModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          editingId={editingId}
+          supabase={supabase}
+          onSaved={() => { setModalOpen(false); loadData() }}
         />
       )}
     </PageContainer>
@@ -915,6 +941,96 @@ function FuncaoModal({
           options={setores.map((s) => ({ value: s.id as string, label: s.titulo as string }))}
           placeholder="Selecione"
         />
+
+        <div className="flex justify-end gap-3 pt-4">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Salvando...' : 'Salvar'}</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// === MOTIVOS DE DESLIGAMENTO ===
+
+function MotivosDesligamentoTable({ data, onEdit, onDelete }: { data: Record<string, unknown>[]; onEdit: (id: string) => void; onDelete: (id: string) => void }) {
+  if (data.length === 0) return <EmptyState title="Nenhum motivo cadastrado" description="Clique em 'Novo Motivo' para criar" />
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableHead>Titulo</TableHead>
+        <TableHead>Descricao</TableHead>
+        <TableHead className="w-24">Acoes</TableHead>
+      </TableHeader>
+      <TableBody>
+        {data.map((m) => (
+          <TableRow key={m.id as string}>
+            <TableCell className="font-medium">{m.titulo as string}</TableCell>
+            <TableCell className="max-w-[300px] truncate">{(m.descricao as string) || '-'}</TableCell>
+            <TableCell>
+              <div className="flex gap-1">
+                <button onClick={() => onEdit(m.id as string)} className="p-1.5 text-azul-medio hover:bg-blue-50 rounded"><Pencil size={16} /></button>
+                <button onClick={() => onDelete(m.id as string)} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+function MotivoDesligamentoModal({
+  open, onClose, editingId, supabase, onSaved,
+}: {
+  open: boolean; onClose: () => void; editingId: string | null
+  supabase: ReturnType<typeof createClient>; onSaved: () => void
+}) {
+  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<MotivoDesligamentoForm>({
+    resolver: zodResolver(motivoDesligamentoSchema),
+  })
+
+  useEffect(() => {
+    if (open) {
+      if (editingId) {
+        supabase.from('motivos_desligamento').select('*').eq('id', editingId).single().then(({ data }) => {
+          if (data) {
+            reset({
+              titulo: (data.titulo as string) || '',
+              descricao: (data.descricao as string) || '',
+            })
+          }
+        })
+      } else {
+        reset({ titulo: '', descricao: '' })
+      }
+    }
+  }, [open, editingId, supabase, reset])
+
+  async function onSubmit(data: MotivoDesligamentoForm) {
+    const payload = {
+      titulo: data.titulo,
+      descricao: data.descricao || null,
+    }
+
+    if (editingId) {
+      const { error } = await supabase.from('motivos_desligamento').update(payload).eq('id', editingId)
+      if (error) { toast.error('Erro: ' + error.message); return }
+      toast.success('Motivo atualizado')
+    } else {
+      const { error } = await supabase.from('motivos_desligamento').insert(payload)
+      if (error) { toast.error('Erro: ' + error.message); return }
+      toast.success('Motivo criado')
+    }
+    onSaved()
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={editingId ? 'Editar Motivo de Desligamento' : 'Novo Motivo de Desligamento'}>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <Input label="Titulo *" {...register('titulo')} error={errors.titulo?.message} placeholder="Ex: Pedido de demissao" />
+        <Input label="Descricao" {...register('descricao')} placeholder="Descricao opcional" />
 
         <div className="flex justify-end gap-3 pt-4">
           <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
