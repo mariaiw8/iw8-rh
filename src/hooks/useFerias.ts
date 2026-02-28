@@ -97,6 +97,21 @@ export function useFerias() {
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
 
+  const enrichWithNames = useCallback(async <T extends { funcionario_id?: string; nome?: string }>(items: T[]): Promise<T[]> => {
+    if (!items.length || items[0].nome) return items
+    const ids = [...new Set(items.map(f => f.funcionario_id).filter(Boolean))] as string[]
+    if (!ids.length) return items
+    const { data: funcs } = await supabase
+      .from('funcionarios')
+      .select('id, nome_completo')
+      .in('id', ids)
+    const nameMap = new Map((funcs || []).map((f: { id: string; nome_completo: string }) => [f.id, f.nome_completo]))
+    return items.map(f => ({
+      ...f,
+      nome: nameMap.get(f.funcionario_id!) || f.nome || 'Sem nome',
+    }))
+  }, [])
+
   const loadFeriasAVencer = useCallback(async () => {
     setLoading(true)
     try {
@@ -106,14 +121,15 @@ export function useFerias() {
         .order('dias_para_vencer', { ascending: true })
 
       if (error) throw error
-      return (data || []) as FeriasAVencer[]
+      const items = (data || []) as FeriasAVencer[]
+      return await enrichWithNames(items)
     } catch (err) {
       console.error('Erro ao carregar ferias a vencer:', err)
       return []
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [enrichWithNames])
 
   const loadProximasFerias = useCallback(async () => {
     try {
@@ -123,12 +139,13 @@ export function useFerias() {
         .order('data_inicio', { ascending: true })
 
       if (error) throw error
-      return (data || []) as ProximasFerias[]
+      const items = (data || []) as ProximasFerias[]
+      return await enrichWithNames(items)
     } catch (err) {
       console.error('Erro ao carregar proximas ferias:', err)
       return []
     }
-  }, [])
+  }, [enrichWithNames])
 
   const loadFeriasFuncionario = useCallback(async (funcionarioId: string) => {
     try {

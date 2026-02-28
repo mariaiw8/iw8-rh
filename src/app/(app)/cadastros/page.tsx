@@ -40,6 +40,7 @@ const setorSchema = z.object({
   titulo: z.string().min(1, 'Titulo obrigatorio'),
   tipo: z.string().min(1, 'Tipo obrigatorio'),
   unidade_id: z.string().optional(),
+  responsavel_id: z.string().optional(),
   // Expediente
   horario_seg_qui_entrada: z.string().optional(),
   horario_seg_qui_almoco_inicio: z.string().optional(),
@@ -444,6 +445,7 @@ function SetoresTable({ data, onEdit, onDelete }: { data: Record<string, unknown
         <TableHead>Titulo</TableHead>
         <TableHead>Tipo</TableHead>
         <TableHead>Unidade</TableHead>
+        <TableHead>Responsavel</TableHead>
         <TableHead>Expediente</TableHead>
         <TableHead>Funcionarios</TableHead>
         <TableHead className="w-24">Acoes</TableHead>
@@ -462,6 +464,7 @@ function SetoresTable({ data, onEdit, onDelete }: { data: Record<string, unknown
                 ) : '-'}
               </TableCell>
               <TableCell>{(s.unidade_titulo as string) || ((s.unidades as Record<string, string>)?.titulo) || '-'}</TableCell>
+              <TableCell>{(s.responsavel_nome as string) || '-'}</TableCell>
               <TableCell>
                 {weeklyHours ? (
                   <span className="flex items-center gap-1 text-sm text-cinza-preto">
@@ -618,6 +621,7 @@ function SetorModal({
   const { register, handleSubmit, reset, watch, formState: { errors, isSubmitting } } = useForm<SetorForm>({
     resolver: zodResolver(setorSchema),
   })
+  const [funcionariosAtivos, setFuncionariosAtivos] = useState<{ id: string; nome_completo: string }[]>([])
 
   const watchedFields = watch()
   const weeklyHours = calcWeeklyHours({
@@ -633,6 +637,16 @@ function SetorModal({
 
   useEffect(() => {
     if (open) {
+      // Load active employees for the responsável select
+      supabase
+        .from('funcionarios')
+        .select('id, nome_completo')
+        .eq('status', 'Ativo')
+        .order('nome_completo')
+        .then(({ data }) => {
+          setFuncionariosAtivos((data as { id: string; nome_completo: string }[]) || [])
+        })
+
       if (editingId) {
         supabase.from('setores').select('*').eq('id', editingId).single().then(({ data }) => {
           if (data) {
@@ -640,6 +654,7 @@ function SetorModal({
               titulo: (data.titulo as string) || '',
               tipo: (data.tipo as string) || '',
               unidade_id: (data.unidade_id as string) || '',
+              responsavel_id: (data.responsavel_id as string) || '',
               horario_seg_qui_entrada: (data.horario_seg_qui_entrada as string) || '',
               horario_seg_qui_almoco_inicio: (data.horario_seg_qui_almoco_inicio as string) || '',
               horario_seg_qui_almoco_fim: (data.horario_seg_qui_almoco_fim as string) || '',
@@ -653,7 +668,7 @@ function SetorModal({
         })
       } else {
         reset({
-          titulo: '', tipo: '', unidade_id: '',
+          titulo: '', tipo: '', unidade_id: '', responsavel_id: '',
           horario_seg_qui_entrada: '', horario_seg_qui_almoco_inicio: '',
           horario_seg_qui_almoco_fim: '', horario_seg_qui_saida: '',
           horario_sex_entrada: '', horario_sex_almoco_inicio: '',
@@ -667,6 +682,7 @@ function SetorModal({
     const payload: Record<string, unknown> = {
       titulo: data.titulo,
       unidade_id: data.unidade_id || null,
+      responsavel_id: data.responsavel_id || null,
       horario_seg_qui_entrada: data.horario_seg_qui_entrada || null,
       horario_seg_qui_almoco_inicio: data.horario_seg_qui_almoco_inicio || null,
       horario_seg_qui_almoco_fim: data.horario_seg_qui_almoco_fim || null,
@@ -681,16 +697,40 @@ function SetorModal({
     if (editingId) {
       const { error } = await supabase.from('setores').update(payload).eq('id', editingId)
       if (error) {
-        // If horario columns don't exist yet, try without them
-        if (error.message.includes('horario_')) {
+        // If responsavel_id column doesn't exist yet, try without it
+        if (error.message.includes('responsavel_id')) {
+          const { responsavel_id: _, ...payloadWithoutResp } = payload
+          const { error: retryError } = await supabase.from('setores').update(payloadWithoutResp).eq('id', editingId)
+          if (retryError) {
+            if (retryError.message.includes('horario_')) {
+              const fallbackPayload: Record<string, unknown> = { titulo: data.titulo, unidade_id: data.unidade_id || null, tipo: payload.tipo }
+              const { error: retryError2 } = await supabase.from('setores').update(fallbackPayload).eq('id', editingId)
+              if (retryError2) { toast.error('Erro: ' + retryError2.message); return }
+              toast.success('Setor atualizado')
+            } else {
+              toast.error('Erro: ' + retryError.message); return
+            }
+          } else {
+            toast.success('Setor atualizado')
+          }
+        } else if (error.message.includes('horario_')) {
           const fallbackPayload: Record<string, unknown> = {
             titulo: data.titulo,
             unidade_id: data.unidade_id || null,
+            responsavel_id: data.responsavel_id || null,
             tipo: payload.tipo,
           }
           const { error: retryError } = await supabase.from('setores').update(fallbackPayload).eq('id', editingId)
-          if (retryError) { toast.error('Erro: ' + retryError.message); return }
-          toast.success('Setor atualizado (execute o SQL para habilitar expediente)')
+          if (retryError) {
+            if (retryError.message.includes('responsavel_id')) {
+              const { responsavel_id: _, ...fb } = fallbackPayload
+              const { error: retryError2 } = await supabase.from('setores').update(fb).eq('id', editingId)
+              if (retryError2) { toast.error('Erro: ' + retryError2.message); return }
+            } else {
+              toast.error('Erro: ' + retryError.message); return
+            }
+          }
+          toast.success('Setor atualizado')
         } else {
           toast.error('Erro: ' + error.message); return
         }
@@ -700,16 +740,39 @@ function SetorModal({
     } else {
       const { error } = await supabase.from('setores').insert(payload)
       if (error) {
-        if (error.message.includes('setores_tipo_check') || error.message.includes('horario_')) {
+        if (error.message.includes('responsavel_id')) {
+          const { responsavel_id: _, ...payloadWithoutResp } = payload
+          const { error: retryError } = await supabase.from('setores').insert(payloadWithoutResp)
+          if (retryError) {
+            if (retryError.message.includes('setores_tipo_check') || retryError.message.includes('horario_')) {
+              const fallbackPayload: Record<string, unknown> = { titulo: data.titulo, unidade_id: data.unidade_id || null }
+              if (!retryError.message.includes('setores_tipo_check') && payload.tipo) fallbackPayload.tipo = payload.tipo
+              const { error: retryError2 } = await supabase.from('setores').insert(fallbackPayload)
+              if (retryError2) { toast.error('Erro: ' + retryError2.message); return }
+            } else {
+              toast.error('Erro: ' + retryError.message); return
+            }
+          }
+          toast.success('Setor criado')
+        } else if (error.message.includes('setores_tipo_check') || error.message.includes('horario_')) {
           const fallbackPayload: Record<string, unknown> = {
             titulo: data.titulo,
             unidade_id: data.unidade_id || null,
+            responsavel_id: data.responsavel_id || null,
           }
           if (!error.message.includes('setores_tipo_check') && payload.tipo) {
             fallbackPayload.tipo = payload.tipo
           }
           const { error: retryError } = await supabase.from('setores').insert(fallbackPayload)
-          if (retryError) { toast.error('Erro: ' + retryError.message); return }
+          if (retryError) {
+            if (retryError.message.includes('responsavel_id')) {
+              const { responsavel_id: _, ...fb } = fallbackPayload
+              const { error: retryError2 } = await supabase.from('setores').insert(fb)
+              if (retryError2) { toast.error('Erro: ' + retryError2.message); return }
+            } else {
+              toast.error('Erro: ' + retryError.message); return
+            }
+          }
           toast.success('Setor criado')
         } else {
           toast.error('Erro: ' + error.message)
@@ -743,6 +806,12 @@ function SetorModal({
             placeholder="Selecione"
           />
         </div>
+        <Select
+          label="Responsavel"
+          {...register('responsavel_id')}
+          options={funcionariosAtivos.map((f) => ({ value: f.id, label: f.nome_completo }))}
+          placeholder="Selecione o responsavel"
+        />
 
         {/* Expediente */}
         <div className="border-t border-gray-200 pt-4">

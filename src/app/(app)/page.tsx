@@ -91,6 +91,23 @@ export default function DashboardPage() {
         supabase.from('funcionarios').select('id, nome_completo, data_admissao, foto_url').eq('status', 'Ativo').gte('data_admissao', new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]).order('data_admissao', { ascending: false }).limit(5),
       ])
 
+      // Enrich próximas férias with names if view didn't return them
+      let proximasFeriasData = proximasFeriasRes.data || []
+      if (proximasFeriasData.length && !proximasFeriasData[0].nome) {
+        const ids = [...new Set(proximasFeriasData.map((f: Record<string, string>) => f.funcionario_id).filter(Boolean))]
+        if (ids.length) {
+          const { data: funcs } = await supabase
+            .from('funcionarios')
+            .select('id, nome_completo')
+            .in('id', ids)
+          const nameMap = new Map((funcs || []).map((f: Record<string, string>) => [f.id, f.nome_completo]))
+          proximasFeriasData = proximasFeriasData.map((f: Record<string, string>) => ({
+            ...f,
+            nome: nameMap.get(f.funcionario_id) || f.nome || 'Sem nome',
+          }))
+        }
+      }
+
       const aniversariantes = (aniversariantesRes.data || [])
         .filter((f) => {
           if (!f.data_nascimento) return false
@@ -104,9 +121,9 @@ export default function DashboardPage() {
         emFerias: feriasRes.count || 0,
         ocorrenciasMes: ocorrenciasRes.count || 0,
         feriasVencer: feriasVencerRes.count || 0,
-        proximasFerias: (proximasFeriasRes.data || []).map((f: Record<string, string>) => ({
+        proximasFerias: proximasFeriasData.map((f: Record<string, string>) => ({
           id: f.id,
-          nome: f.nome,
+          nome: f.nome || 'Sem nome',
           inicio: f.data_inicio,
           fim: f.data_fim,
         })),
