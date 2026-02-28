@@ -200,10 +200,15 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
           label="Periodo Aquisitivo *"
           value={form.ferias_saldo_id || ''}
           onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value })}
-          options={periodosDisponiveis.map((p) => ({
-            value: p.id,
-            label: `${format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')} — ${p.dias_restantes} dias disponiveis`,
-          }))}
+          options={periodosDisponiveis.map((p) => {
+            let label = `${p.periodo_aquisitivo_inicio || '?'} a ${p.periodo_aquisitivo_fim || '?'} — ${p.dias_restantes} dias disponiveis`
+            try {
+              const inicio = format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')
+              const fim = format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')
+              label = `${inicio} a ${fim} — ${p.dias_restantes} dias disponiveis`
+            } catch { /* use raw dates */ }
+            return { value: p.id, label }
+          })}
           placeholder={periodosDisponiveis.length === 0 ? 'Nenhum periodo disponivel' : 'Selecione o periodo'}
           error={validationError || undefined}
         />

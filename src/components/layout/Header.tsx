@@ -48,12 +48,12 @@ export function Header() {
       if (idx > 0 && parts[idx - 1] === 'funcionarios') {
         supabase
           .from('funcionarios')
-          .select('nome_completo, nome')
+          .select('nome_completo')
           .eq('id', part)
           .single()
           .then(({ data }) => {
             if (data) {
-              const nome = (data.nome_completo || data.nome || '').toString()
+              const nome = (data.nome_completo || '').toString()
               if (nome) {
                 setDynamicLabels((prev) => ({ ...prev, [part]: nome }))
               }

@@ -249,7 +249,7 @@ export default function OcorrenciasPage() {
               {filteredOcorrencias.map((o) => (
                 <TableRow key={o.id}>
                   <TableCell>
-                    {format(new Date(o.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {(() => { try { return format(new Date(o.data_inicio + 'T00:00:00'), 'dd/MM/yyyy') } catch { return o.data_inicio || '-' } })()}
                   </TableCell>
                   <TableCell>
                     <div>

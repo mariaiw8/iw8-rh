@@ -10,6 +10,15 @@ import { Pencil, Check, X } from 'lucide-react'
 import type { FeriasSaldo } from '@/hooks/useFerias'
 import { format } from 'date-fns'
 
+function safeFormat(dateStr: string | null | undefined, fmt: string = 'dd/MM/yyyy'): string {
+  if (!dateStr) return '-'
+  try {
+    return format(new Date(dateStr + 'T00:00:00'), fmt)
+  } catch {
+    return dateStr
+  }
+}
+
 interface SaldoFeriasProps {
   saldos: FeriasSaldo[]
   onUpdateDireito: (saldoId: string, dias: number) => Promise<boolean>
@@ -76,7 +85,7 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
               saldos.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
-                    {format(new Date(s.periodo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} - {format(new Date(s.periodo_fim + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {safeFormat(s.periodo_aquisitivo_inicio)} - {safeFormat(s.periodo_aquisitivo_fim)}
                   </TableCell>
                   <TableCell>
                     {editingId === s.id ? (
@@ -97,7 +106,7 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
                   <TableCell>{s.dias_gozados}</TableCell>
                   <TableCell>{s.dias_vendidos}</TableCell>
                   <TableCell className="font-medium">{s.dias_restantes}</TableCell>
-                  <TableCell>{format(new Date(s.data_vencimento + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
+                  <TableCell>{safeFormat(s.data_vencimento)}</TableCell>
                   <TableCell>
                     <Badge variant={getStatusVariant(s.status)}>{s.status}</Badge>
                   </TableCell>

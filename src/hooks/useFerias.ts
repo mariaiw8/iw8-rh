@@ -169,7 +169,7 @@ export function useFerias() {
         .from('ferias_saldo')
         .select('*')
         .eq('funcionario_id', funcionarioId)
-        .order('periodo_inicio', { ascending: false })
+        .order('periodo_aquisitivo_inicio', { ascending: false })
 
       if (error) throw error
       return (data || []) as FeriasSaldo[]

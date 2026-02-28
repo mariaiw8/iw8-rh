@@ -20,7 +20,7 @@ export function SalarioChart({ salarios }: SalarioChartProps) {
   const chartData = [...salarios]
     .sort((a, b) => a.data_vigencia.localeCompare(b.data_vigencia))
     .map((s) => ({
-      data: format(new Date(s.data_vigencia + 'T00:00:00'), 'MMM/yyyy', { locale: ptBR }),
+      data: (() => { try { return format(new Date(s.data_vigencia + 'T00:00:00'), 'MMM/yyyy', { locale: ptBR }) } catch { return s.data_vigencia || '-' } })(),
       'Salario Bruto': s.salario_bruto,
       'Salario Liquido': s.salario_liquido || 0,
     }))
