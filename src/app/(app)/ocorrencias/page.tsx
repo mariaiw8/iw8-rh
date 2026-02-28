@@ -109,6 +109,7 @@ export default function OcorrenciasPage() {
       valor: data.valor || undefined,
       arquivo_url: data.arquivo_url || undefined,
       observacao: data.observacao || undefined,
+      absenteismo: data.absenteismo || false,
     })
     loadData()
   }
@@ -240,6 +241,7 @@ export default function OcorrenciasPage() {
               <TableHead>Descricao</TableHead>
               <TableHead>Dias</TableHead>
               <TableHead>Valor</TableHead>
+              <TableHead>Abs.</TableHead>
               <TableHead>Anexo</TableHead>
               <TableHead className="w-10"></TableHead>
             </TableHeader>
@@ -269,6 +271,11 @@ export default function OcorrenciasPage() {
                   <TableCell>{o.dias}</TableCell>
                   <TableCell>
                     {o.valor ? `R$ ${Number(o.valor).toFixed(2).replace('.', ',')}` : '-'}
+                  </TableCell>
+                  <TableCell>
+                    {o.absenteismo ? (
+                      <Badge variant="warning">ABS</Badge>
+                    ) : '-'}
                   </TableCell>
                   <TableCell>
                     {o.arquivo_url ? (

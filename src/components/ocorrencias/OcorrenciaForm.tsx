@@ -33,6 +33,7 @@ export interface OcorrenciaFormData {
   observacao: string
   descontar_ferias: boolean
   ferias_saldo_id: string | null
+  absenteismo: boolean
 }
 
 export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcionarioNome, tipos }: OcorrenciaFormProps) {
@@ -55,6 +56,7 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
     observacao: '',
     descontar_ferias: false,
     ferias_saldo_id: null,
+    absenteismo: false,
   })
 
   useEffect(() => {
@@ -140,6 +142,7 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
         observacao: '',
         descontar_ferias: false,
         ferias_saldo_id: null,
+        absenteismo: false,
       })
       onClose()
     } finally {
@@ -223,6 +226,16 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
         </div>
 
         <div className="space-y-3">
+          <label className="flex items-center gap-2 text-sm text-cinza-preto">
+            <input
+              type="checkbox"
+              checked={form.absenteismo}
+              onChange={(e) => setForm({ ...form, absenteismo: e.target.checked })}
+              className="rounded border-gray-300 text-laranja focus:ring-laranja"
+            />
+            Contabilizar como Absenteismo
+          </label>
+
           <label className="flex items-center gap-2 text-sm text-cinza-preto">
             <input
               type="checkbox"

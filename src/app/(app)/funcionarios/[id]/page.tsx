@@ -11,15 +11,16 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { FileUpload } from '@/components/ui/FileUpload'
 import { Skeleton } from '@/components/ui/LoadingSkeleton'
+import { Modal } from '@/components/ui/Modal'
 import { createClient } from '@/lib/supabase'
-import { ArrowLeft, Pencil, Save, X, Plus, Trash2, Clock, Building2, Calendar, DollarSign, ClipboardList, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Plus, Trash2, Clock, Building2, Calendar, DollarSign, ClipboardList, ExternalLink, FileText, TrendingUp, TrendingDown, Ban } from 'lucide-react'
 import { toast } from 'sonner'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { format, differenceInYears, differenceInMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { useFerias, type FeriasSaldo, type Ferias } from '@/hooks/useFerias'
+import { useFerias, type FeriasSaldo, type Ferias, type FeriasExtrato } from '@/hooks/useFerias'
 import { useOcorrencias, type Ocorrencia, type TipoOcorrencia } from '@/hooks/useOcorrencias'
 import { SaldoFerias } from '@/components/ferias/SaldoFerias'
 import { FeriasAlert } from '@/components/ferias/FeriasAlert'
@@ -30,6 +31,16 @@ import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from '@
 import { EmptyState } from '@/components/ui/EmptyState'
 
 const ESTADOS_CIVIS = ['Solteiro(a)', 'Casado(a)', 'Divorciado(a)', 'Viuvo(a)', 'Uniao Estavel']
+
+const PARENTESCOS = [
+  { value: 'Cônjuge', label: 'Cônjuge' },
+  { value: 'Filho(a)', label: 'Filho(a)' },
+  { value: 'Dependente', label: 'Dependente' },
+  { value: 'Pai', label: 'Pai' },
+  { value: 'Mãe', label: 'Mãe' },
+  { value: 'Irmão(ã)', label: 'Irmão(ã)' },
+  { value: 'Outro', label: 'Outro' },
+]
 
 function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11)
@@ -46,6 +57,7 @@ const UFS = [
 
 const funcionarioSchema = z.object({
   nome: z.string().min(1, 'Nome obrigatorio'),
+  apelido: z.string().optional(),
   codigo: z.string().optional(),
   data_nascimento: z.string().optional(),
   cpf: z.string().optional(),
@@ -107,6 +119,9 @@ export default function FuncionarioDetailPage() {
   const [funcionario, setFuncionario] = useState<Record<string, unknown> | null>(null)
   const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   const [fotoFile, setFotoFile] = useState<File | null>(null)
+
+  // Track newly added familiar indices for animation
+  const [recentlyAdded, setRecentlyAdded] = useState<Set<number>>(new Set())
 
   // Lookup data
   const [unidades, setUnidades] = useState<{ id: string; titulo: string }[]>([])
@@ -183,6 +198,7 @@ export default function FuncionarioDetailPage() {
 
       reset({
         nome: f.nome_completo || f.nome || '',
+        apelido: f.apelido || '',
         codigo: f.codigo || '',
         data_nascimento: f.data_nascimento || '',
         cpf: f.cpf || '',
@@ -261,9 +277,10 @@ export default function FuncionarioDetailPage() {
         }
       }
 
-      const { familiares, nome, ...restData } = data
+      const { familiares, nome, apelido, ...restData } = data
       const basePayload: Record<string, unknown> = {
         nome_completo: nome,
+        apelido: apelido || null,
         foto_url: fotoUrl || null,
         codigo: restData.codigo || null,
         data_nascimento: restData.data_nascimento || null,
@@ -336,6 +353,26 @@ export default function FuncionarioDetailPage() {
     }
   }
 
+  function handleAddFamiliar() {
+    const currentFamiliares = watch('familiares') || []
+    // Check if the last added familiar has a name filled (basic validation)
+    addFamiliar({ nome: '', parentesco: '', data_nascimento: '' })
+    const newIndex = currentFamiliares.length
+    setRecentlyAdded((prev) => {
+      const next = new Set(prev)
+      next.add(newIndex)
+      return next
+    })
+    // Clear highlight after animation
+    setTimeout(() => {
+      setRecentlyAdded((prev) => {
+        const next = new Set(prev)
+        next.delete(newIndex)
+        return next
+      })
+    }, 2000)
+  }
+
   function getTempoEmpresa() {
     if (!funcionario?.data_admissao) return null
     const admissao = new Date((funcionario.data_admissao as string) + 'T00:00:00')
@@ -401,13 +438,17 @@ export default function FuncionarioDetailPage() {
     if (!sId) return null
     const setor = setores.find((s) => s.id === sId)
     if (!setor) return null
-    if (!setor.horario_seg_qui_entrada && !setor.horario_sex_entrada) return null
     return setor
   }
 
   function applySetorSchedule() {
     const setor = getSetorExpediente()
     if (!setor) return
+    // Check if the sector actually has schedule data
+    if (!setor.horario_seg_qui_entrada && !setor.horario_sex_entrada) {
+      toast.error('Este setor nao tem horario padrao cadastrado')
+      return
+    }
     setValue('seg_qui_entrada', setor.horario_seg_qui_entrada || '')
     setValue('seg_qui_almoco_inicio', setor.horario_seg_qui_almoco_inicio || '')
     setValue('seg_qui_almoco_fim', setor.horario_seg_qui_almoco_fim || '')
@@ -416,6 +457,7 @@ export default function FuncionarioDetailPage() {
     setValue('sexta_almoco_inicio', setor.horario_sex_almoco_inicio || '')
     setValue('sexta_almoco_fim', setor.horario_sex_almoco_fim || '')
     setValue('sexta_saida', setor.horario_sex_saida || '')
+    toast.success('Horario do setor aplicado')
   }
 
   if (loading) {
@@ -433,6 +475,7 @@ export default function FuncionarioDetailPage() {
   if (!funcionario) return null
 
   const tempoEmpresa = getTempoEmpresa()
+  const displayApelido = funcionario.apelido as string | undefined
 
   return (
     <PageContainer>
@@ -450,7 +493,7 @@ export default function FuncionarioDetailPage() {
           <div className="flex gap-2">
             {editing ? (
               <>
-                <Button type="button" variant="ghost" onClick={() => { setEditing(false); loadFuncionario() }}>
+                <Button type="button" variant="ghost" onClick={() => { setEditing(false); setFotoFile(null); loadFuncionario() }}>
                   <X size={16} /> Cancelar
                 </Button>
                 <Button type="submit" disabled={isSubmitting}>
@@ -492,7 +535,12 @@ export default function FuncionarioDetailPage() {
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-1">
-                <h2 className="text-xl font-bold text-cinza-preto">{(funcionario.nome_completo || funcionario.nome) as string}</h2>
+                <h2 className="text-xl font-bold text-cinza-preto">
+                  {(funcionario.nome_completo || funcionario.nome) as string}
+                  {displayApelido && (
+                    <span className="text-cinza-estrutural font-normal text-base ml-2">({displayApelido})</span>
+                  )}
+                </h2>
                 <Badge variant={(funcionario.status as string) === 'Ativo' ? 'success' : 'neutral'}>
                   {funcionario.status as string}
                 </Badge>
@@ -539,6 +587,7 @@ export default function FuncionarioDetailPage() {
               <h3 className="text-lg font-bold text-cinza-preto mb-4">Informacoes Pessoais</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Input label="Nome Completo *" {...register('nome')} error={errors.nome?.message} disabled={!editing} />
+                <Input label="Apelido" {...register('apelido')} disabled={!editing} placeholder="Ex: Joaozinho" />
                 <Input label="Codigo" {...register('codigo')} disabled={!editing} />
                 <Input label="Data de Nascimento" type="date" {...register('data_nascimento')} disabled={!editing} />
                 <Input label="CPF" {...register('cpf')} placeholder="000.000.000-00" disabled={!editing} />
@@ -662,7 +711,7 @@ export default function FuncionarioDetailPage() {
                     )
                   })()}
                 </div>
-                {editing && getSetorExpediente() && (
+                {editing && setorId && (
                   <Button type="button" variant="ghost" size="sm" onClick={applySetorSchedule}>
                     <Building2 size={14} />
                     Horario Padrao do Setor
@@ -691,67 +740,63 @@ export default function FuncionarioDetailPage() {
               </div>
             </Card>
 
-            {/* Familia */}
+            {/* Familia / Dependentes */}
             <Card>
-              <h3 className="text-lg font-bold text-cinza-preto mb-4">Familia</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-semibold text-cinza-estrutural">Familiares</h4>
-                  {editing && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => addFamiliar({ nome: '', parentesco: '', data_nascimento: '' })}>
-                      <Plus size={14} /> Adicionar Familiar
-                    </Button>
-                  )}
-                </div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-cinza-preto">Familia / Dependentes</h3>
+                {editing && (
+                  <Button type="button" variant="ghost" size="sm" onClick={handleAddFamiliar}>
+                    <Plus size={14} /> Adicionar Familiar
+                  </Button>
+                )}
+              </div>
+              <div className="space-y-3">
                 {familiaFields.length === 0 ? (
                   <p className="text-sm text-cinza-estrutural">Nenhum familiar cadastrado</p>
                 ) : (
-                  <div className="space-y-3">
-                    {familiaFields.map((field, index) => (
-                      <div key={field.id} className="flex items-end gap-3">
-                        <div className="w-40">
-                          <Select
-                            label="Parentesco"
-                            placeholder="Selecione"
-                            options={[
-                              { value: 'Cônjuge', label: 'Cônjuge' },
-                              { value: 'Filho(a)', label: 'Filho(a)' },
-                              { value: 'Pai', label: 'Pai' },
-                              { value: 'Mãe', label: 'Mãe' },
-                              { value: 'Irmão(ã)', label: 'Irmão(ã)' },
-                              { value: 'Outro', label: 'Outro' },
-                            ]}
-                            {...register(`familiares.${index}.parentesco`)}
-                            disabled={!editing}
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <Input
-                            label="Nome"
-                            {...register(`familiares.${index}.nome`)}
-                            disabled={!editing}
-                          />
-                        </div>
-                        <div className="w-48">
-                          <Input
-                            label="Data de Nascimento"
-                            type="date"
-                            {...register(`familiares.${index}.data_nascimento`)}
-                            disabled={!editing}
-                          />
-                        </div>
-                        {editing && (
-                          <button
-                            type="button"
-                            onClick={() => removeFamiliar(index)}
-                            className="p-2 text-red-500 hover:bg-red-50 rounded mb-0.5"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
+                  familiaFields.map((field, index) => (
+                    <div
+                      key={field.id}
+                      className={`flex items-end gap-3 transition-all duration-500 ${
+                        recentlyAdded.has(index) ? 'bg-green-50 border border-green-200 rounded-lg p-3' : ''
+                      }`}
+                    >
+                      <div className="w-40">
+                        <Select
+                          label="Parentesco"
+                          placeholder="Selecione"
+                          options={PARENTESCOS}
+                          {...register(`familiares.${index}.parentesco`)}
+                          disabled={!editing}
+                        />
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex-1">
+                        <Input
+                          label="Nome"
+                          {...register(`familiares.${index}.nome`)}
+                          disabled={!editing}
+                          error={errors.familiares?.[index]?.nome?.message}
+                        />
+                      </div>
+                      <div className="w-48">
+                        <Input
+                          label="Data de Nascimento"
+                          type="date"
+                          {...register(`familiares.${index}.data_nascimento`)}
+                          disabled={!editing}
+                        />
+                      </div>
+                      {editing && (
+                        <button
+                          type="button"
+                          onClick={() => removeFamiliar(index)}
+                          className="p-2 text-red-500 hover:bg-red-50 rounded mb-0.5"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))
                 )}
               </div>
             </Card>
@@ -777,35 +822,54 @@ export default function FuncionarioDetailPage() {
 }
 
 // =================== FERIAS TAB ===================
+function getSaldoStatusBadge(status: string) {
+  switch (status) {
+    case 'Disponível': return <Badge variant="success">Disponivel</Badge>
+    case 'Parcial': return <Badge variant="warning">Parcial</Badge>
+    case 'Gozado': return <Badge variant="neutral">Gozado</Badge>
+    case 'Vencido': return <Badge variant="danger">Vencido</Badge>
+    default: return <Badge>{status}</Badge>
+  }
+}
+
 function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; funcionarioNome: string }) {
   const {
+    loadSaldos,
+    loadExtrato,
     loadFeriasFuncionario,
     loadSaldosFuncionario,
     createFerias,
     deleteFerias,
     venderFerias,
     updateSaldoDireito,
+    loadPeriodosDisponiveis,
   } = useFerias()
+
+  const supabase = createClient()
 
   const [saldos, setSaldos] = useState<FeriasSaldo[]>([])
   const [ferias, setFerias] = useState<Ferias[]>([])
+  const [extrato, setExtrato] = useState<FeriasExtrato[]>([])
   const [loadingFerias, setLoadingFerias] = useState(true)
   const [showFeriasForm, setShowFeriasForm] = useState(false)
   const [showVenderForm, setShowVenderForm] = useState(false)
+  const [editingExtrato, setEditingExtrato] = useState<FeriasExtrato | null>(null)
 
   const loadData = useCallback(async () => {
     setLoadingFerias(true)
     try {
-      const [s, f] = await Promise.all([
-        loadSaldosFuncionario(funcionarioId),
+      const [s, f, e] = await Promise.all([
+        loadSaldos(funcionarioId),
         loadFeriasFuncionario(funcionarioId),
+        loadExtrato(funcionarioId),
       ])
       setSaldos(s)
       setFerias(f)
+      setExtrato(e)
     } finally {
       setLoadingFerias(false)
     }
-  }, [funcionarioId, loadSaldosFuncionario, loadFeriasFuncionario])
+  }, [funcionarioId, loadSaldos, loadExtrato, loadFeriasFuncionario])
 
   useEffect(() => {
     loadData()
@@ -820,6 +884,16 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
     return diffDays > 0 && diffDays <= 120 && s.dias_restantes > 0
   }).length
   const vencidaCount = saldos.filter((s) => s.status === 'Vencido').length
+
+  // Resumo from saldos (same as ferias page)
+  const resumo = {
+    diasDireito: saldos.reduce((acc, s) => acc + (s.dias_direito || 0), 0),
+    diasGozados: saldos.reduce((acc, s) => acc + (s.dias_gozados || 0), 0),
+    diasDisponiveis: saldos
+      .filter((s) => s.status === 'Disponível' || s.status === 'Parcial')
+      .reduce((acc, s) => acc + (s.dias_restantes || 0), 0),
+    periodosVencidos: saldos.filter((s) => s.status === 'Vencido').length,
+  }
 
   async function handleCreateFerias(data: FeriasFormData) {
     await createFerias({
@@ -836,8 +910,54 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
     loadData()
   }
 
-  async function handleVender(periodoId: string, dias: number) {
+  async function handleVender(periodoId: string, dias: number, valor?: number) {
     const ok = await venderFerias(periodoId, dias)
+    if (ok && valor && valor > 0) {
+      // Create ferias record for the sale
+      const { data: saldoData } = await supabase
+        .from('ferias_saldo')
+        .select('periodo_aquisitivo_inicio, periodo_aquisitivo_fim')
+        .eq('id', periodoId)
+        .single()
+
+      const hoje = new Date().toISOString().split('T')[0]
+      const { data: feriasRec } = await supabase
+        .from('ferias')
+        .insert({
+          funcionario_id: funcionarioId,
+          ferias_saldo_id: periodoId,
+          data_inicio: hoje,
+          data_fim: hoje,
+          dias: 0,
+          abono_pecuniario: true,
+          dias_vendidos: dias,
+          status: 'Concluída',
+          tipo: 'Individual',
+        })
+        .select('id')
+        .single()
+
+      // Register financial transaction
+      const { data: tipoVenda } = await supabase
+        .from('tipos_transacao')
+        .select('id')
+        .eq('titulo', 'Venda de Férias')
+        .single()
+
+      if (tipoVenda && feriasRec) {
+        const inicio = saldoData?.periodo_aquisitivo_inicio || ''
+        const fim = saldoData?.periodo_aquisitivo_fim || ''
+        await supabase.from('transacoes').insert({
+          funcionario_id: funcionarioId,
+          tipo_transacao_id: tipoVenda.id,
+          valor: valor,
+          data: hoje,
+          descricao: `Venda de ${dias} dias de ferias — Periodo ${inicio} a ${fim}`,
+          origem_tabela: 'ferias',
+          origem_id: feriasRec.id,
+        })
+      }
+    }
     if (ok) loadData()
     return ok
   }
@@ -852,6 +972,50 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
     const ok = await updateSaldoDireito(saldoId, dias)
     if (ok) loadData()
     return ok
+  }
+
+  async function handleSaveExtrato(item: FeriasExtrato, newData: { data?: string; dias?: number }) {
+    try {
+      if (item.tipo_movimento === 'CRÉDITO' && item.referencia_tabela === 'ferias_saldo') {
+        const updatePayload: Record<string, unknown> = {}
+        if (newData.dias !== undefined) updatePayload.dias_direito = newData.dias
+        if (Object.keys(updatePayload).length > 0) {
+          const { error } = await supabase
+            .from('ferias_saldo')
+            .update(updatePayload)
+            .eq('id', item.referencia_id)
+          if (error) throw error
+        }
+      } else if (item.referencia_tabela === 'ferias') {
+        const updatePayload: Record<string, unknown> = {}
+        if (newData.dias !== undefined) updatePayload.dias = newData.dias
+        if (newData.data !== undefined) updatePayload.data_inicio = newData.data
+        if (Object.keys(updatePayload).length > 0) {
+          const { error } = await supabase
+            .from('ferias')
+            .update(updatePayload)
+            .eq('id', item.referencia_id)
+          if (error) throw error
+        }
+      } else if (item.referencia_tabela === 'ocorrencias') {
+        const updatePayload: Record<string, unknown> = {}
+        if (newData.dias !== undefined) updatePayload.dias = newData.dias
+        if (newData.data !== undefined) updatePayload.data_inicio = newData.data
+        if (Object.keys(updatePayload).length > 0) {
+          const { error } = await supabase
+            .from('ocorrencias')
+            .update(updatePayload)
+            .eq('id', item.referencia_id)
+          if (error) throw error
+        }
+      }
+      toast.success('Movimentacao atualizada')
+      setEditingExtrato(null)
+      loadData()
+    } catch (err) {
+      console.error('Erro ao editar extrato:', err)
+      toast.error('Erro ao editar movimentacao')
+    }
   }
 
   if (loadingFerias) {
@@ -891,6 +1055,38 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
         <FeriasAlert alertCount={alertCount} vencidaCount={vencidaCount} />
       </div>
 
+      {/* Cards de resumo */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+          <div className="flex items-center gap-2 text-sm text-blue-600 mb-1">
+            <Calendar size={14} />
+            Dias de Direito
+          </div>
+          <div className="text-2xl font-bold text-blue-700">{resumo.diasDireito}</div>
+        </div>
+        <div className="bg-green-50 rounded-lg p-4 border border-green-100">
+          <div className="flex items-center gap-2 text-sm text-green-600 mb-1">
+            <TrendingDown size={14} />
+            Dias Gozados
+          </div>
+          <div className="text-2xl font-bold text-green-700">{resumo.diasGozados}</div>
+        </div>
+        <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
+          <div className="flex items-center gap-2 text-sm text-emerald-600 mb-1">
+            <TrendingUp size={14} />
+            Dias Disponiveis
+          </div>
+          <div className="text-2xl font-bold text-emerald-700">{resumo.diasDisponiveis}</div>
+        </div>
+        <div className="bg-red-50 rounded-lg p-4 border border-red-100">
+          <div className="flex items-center gap-2 text-sm text-red-600 mb-1">
+            <Ban size={14} />
+            Periodos Vencidos
+          </div>
+          <div className="text-2xl font-bold text-red-700">{resumo.periodosVencidos}</div>
+        </div>
+      </div>
+
       {/* Action Buttons */}
       <div className="flex gap-2">
         <Button type="button" onClick={() => setShowFeriasForm(true)}>
@@ -900,6 +1096,62 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
           <DollarSign size={16} /> Vender Ferias
         </Button>
       </div>
+
+      {/* Extrato de Movimentacoes */}
+      <Card>
+        <h3 className="text-lg font-bold text-cinza-preto mb-4 flex items-center gap-2">
+          <FileText size={18} className="text-azul-medio" />
+          Extrato de Movimentacoes
+        </h3>
+        {extrato.length === 0 ? (
+          <EmptyState
+            icon={<FileText size={40} />}
+            title="Nenhuma movimentacao"
+            description="Nenhum registro de ferias encontrado"
+          />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableHead>Data</TableHead>
+              <TableHead>Tipo</TableHead>
+              <TableHead>Descricao</TableHead>
+              <TableHead>Dias</TableHead>
+              <TableHead>Status</TableHead>
+            </TableHeader>
+            <TableBody>
+              {extrato.map((e, idx) => (
+                <TableRow
+                  key={`${e.referencia_id}-${idx}`}
+                  className="cursor-pointer hover:bg-gray-50"
+                  onClick={() => setEditingExtrato(e)}
+                >
+                  <TableCell>
+                    {format(new Date(e.data_movimento + 'T00:00:00'), 'dd/MM/yyyy')}
+                  </TableCell>
+                  <TableCell>
+                    {e.tipo_movimento === 'CRÉDITO' ? (
+                      <Badge variant="success">CREDITO</Badge>
+                    ) : (
+                      <Badge variant="danger">DEBITO</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>{e.descricao}</TableCell>
+                  <TableCell>
+                    <span className={e.dias > 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                      {e.dias > 0 ? `+${e.dias}` : e.dias}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    {e.tipo_movimento === 'CRÉDITO' && e.saldo_status
+                      ? getSaldoStatusBadge(e.saldo_status)
+                      : '-'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
 
       {/* Historico */}
       <Card>
@@ -932,7 +1184,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
                   <TableRow key={f.id}>
                     <TableCell>
                       {saldo
-                        ? `${format(new Date(saldo.periodo_inicio + 'T00:00:00'), 'dd/MM/yy')} - ${format(new Date(saldo.periodo_fim + 'T00:00:00'), 'dd/MM/yy')}`
+                        ? `${format(new Date(saldo.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yy')} - ${format(new Date(saldo.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yy')}`
                         : '-'}
                     </TableCell>
                     <TableCell>{format(new Date(f.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
@@ -943,7 +1195,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
                       <Badge variant={
                         f.status === 'Programada' ? 'info'
                         : f.status === 'Em Andamento' ? 'warning'
-                        : f.status === 'Concluida' ? 'success'
+                        : f.status === 'Concluida' || f.status === 'Concluída' ? 'success'
                         : 'neutral'
                       }>{f.status}</Badge>
                     </TableCell>
@@ -978,7 +1230,71 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
         saldos={saldos}
         onSubmit={handleVender}
       />
+
+      {/* Edit Extrato Modal */}
+      {editingExtrato && (
+        <EditExtratoModal
+          item={editingExtrato}
+          onClose={() => setEditingExtrato(null)}
+          onSave={handleSaveExtrato}
+        />
+      )}
     </div>
+  )
+}
+
+// =================== EDIT EXTRATO MODAL ===================
+function EditExtratoModal({
+  item,
+  onClose,
+  onSave,
+}: {
+  item: FeriasExtrato
+  onClose: () => void
+  onSave: (item: FeriasExtrato, data: { data?: string; dias?: number }) => Promise<void>
+}) {
+  const [data, setData] = useState(item.data_movimento || '')
+  const [dias, setDias] = useState(Math.abs(item.dias))
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await onSave(item, { data, dias })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal open={true} onClose={onClose} title="Editar Movimentacao">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="bg-gray-50 rounded-lg p-3 text-sm">
+          <p><strong>Tipo:</strong> {item.tipo_movimento}</p>
+          <p><strong>Descricao:</strong> {item.descricao}</p>
+          <p><strong>Tabela:</strong> {item.referencia_tabela}</p>
+        </div>
+        <Input
+          label="Data"
+          type="date"
+          value={data}
+          onChange={(e) => setData(e.target.value)}
+        />
+        <Input
+          label="Dias"
+          type="number"
+          value={dias.toString()}
+          onChange={(e) => setDias(parseInt(e.target.value) || 0)}
+        />
+        <div className="flex justify-end gap-3 pt-2">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Salvando...' : 'Salvar'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
