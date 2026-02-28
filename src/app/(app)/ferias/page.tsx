@@ -10,8 +10,10 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
 import { FeriasForm, type FeriasFormData } from '@/components/ferias/FeriasForm'
 import { FeriasColetivasForm, type FeriasColetivasFormData } from '@/components/ferias/FeriasColetivasForm'
-import { useFerias, type FeriasAVencer, type ProximasFerias, type FeriasColetivas } from '@/hooks/useFerias'
-import { Plus, AlertTriangle, Calendar, Users, Trash2 } from 'lucide-react'
+import { Select } from '@/components/ui/Select'
+import { useFerias, type FeriasAVencer, type ProximasFerias, type FeriasColetivas, type FeriasExtrato, type FeriasSaldo } from '@/hooks/useFerias'
+import { createClient } from '@/lib/supabase'
+import { Plus, AlertTriangle, Calendar, Users, Trash2, FileText, TrendingUp, TrendingDown, Clock, Ban } from 'lucide-react'
 import { format } from 'date-fns'
 
 function getSituacaoStyle(situacao: string) {
@@ -33,7 +35,18 @@ function getStatusBadge(status: string) {
   }
 }
 
+function getSaldoStatusBadge(status: string) {
+  switch (status) {
+    case 'Disponível': return <Badge variant="success">Disponivel</Badge>
+    case 'Parcial': return <Badge variant="warning">Parcial</Badge>
+    case 'Gozado': return <Badge variant="neutral">Gozado</Badge>
+    case 'Vencido': return <Badge variant="danger">Vencido</Badge>
+    default: return <Badge>{status}</Badge>
+  }
+}
+
 export default function FeriasPage() {
+  const supabase = createClient()
   const {
     loadFeriasAVencer,
     loadProximasFerias,
@@ -41,6 +54,8 @@ export default function FeriasPage() {
     createFerias,
     createFeriasColetivas,
     deleteFeriasColetivas,
+    loadExtrato,
+    loadSaldos,
   } = useFerias()
 
   const [loading, setLoading] = useState(true)
@@ -49,6 +64,13 @@ export default function FeriasPage() {
   const [feriasColetivas, setFeriasColetivas] = useState<FeriasColetivas[]>([])
   const [showFeriasForm, setShowFeriasForm] = useState(false)
   const [showColetivasForm, setShowColetivasForm] = useState(false)
+
+  // Extrato de Ferias state
+  const [funcionarios, setFuncionarios] = useState<{ value: string; label: string }[]>([])
+  const [selectedFuncionarioId, setSelectedFuncionarioId] = useState('')
+  const [extrato, setExtrato] = useState<FeriasExtrato[]>([])
+  const [saldos, setSaldos] = useState<FeriasSaldo[]>([])
+  const [loadingExtrato, setLoadingExtrato] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -68,7 +90,56 @@ export default function FeriasPage() {
 
   useEffect(() => {
     loadData()
+    loadFuncionarios()
   }, [loadData])
+
+  useEffect(() => {
+    if (selectedFuncionarioId) {
+      loadExtratoData(selectedFuncionarioId)
+    } else {
+      setExtrato([])
+      setSaldos([])
+    }
+  }, [selectedFuncionarioId])
+
+  async function loadFuncionarios() {
+    const { data } = await supabase
+      .from('funcionarios')
+      .select('id, nome_completo, codigo')
+      .eq('status', 'Ativo')
+      .order('nome_completo')
+
+    setFuncionarios(
+      (data || []).map((f: Record<string, string>) => ({
+        value: f.id,
+        label: `${f.nome_completo} (${f.codigo || 'sem codigo'})`,
+      }))
+    )
+  }
+
+  async function loadExtratoData(funcionarioId: string) {
+    setLoadingExtrato(true)
+    try {
+      const [extratoData, saldosData] = await Promise.all([
+        loadExtrato(funcionarioId),
+        loadSaldos(funcionarioId),
+      ])
+      setExtrato(extratoData)
+      setSaldos(saldosData)
+    } finally {
+      setLoadingExtrato(false)
+    }
+  }
+
+  // Computed summary from saldos
+  const resumo = {
+    diasDireito: saldos.reduce((acc, s) => acc + (s.dias_direito || 0), 0),
+    diasGozados: saldos.reduce((acc, s) => acc + (s.dias_gozados || 0), 0),
+    diasDisponiveis: saldos
+      .filter((s) => s.status === 'Disponível' || s.status === 'Parcial')
+      .reduce((acc, s) => acc + (s.dias_restantes || 0), 0),
+    periodosVencidos: saldos.filter((s) => s.status === 'Vencido').length,
+  }
 
   async function handleCreateFerias(data: FeriasFormData) {
     await createFerias({
@@ -302,6 +373,193 @@ export default function FeriasPage() {
             </TableBody>
           </Table>
         )}
+      </Card>
+
+      {/* Secao 4 - Extrato de Ferias */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>
+            <div className="flex items-center gap-2">
+              <FileText size={18} className="text-azul-medio" />
+              Extrato de Ferias
+            </div>
+          </CardTitle>
+        </CardHeader>
+        <div className="p-6 pt-0">
+          {/* Seletor de funcionario */}
+          <Select
+            label="Selecione o Funcionario"
+            value={selectedFuncionarioId}
+            onChange={(e) => setSelectedFuncionarioId(e.target.value)}
+            options={funcionarios}
+            placeholder="Selecione um funcionario..."
+          />
+
+          {selectedFuncionarioId && (
+            <>
+              {loadingExtrato ? (
+                <div className="mt-6 space-y-4">
+                  {Array.from({ length: 2 }).map((_, i) => <CardSkeleton key={i} />)}
+                </div>
+              ) : (
+                <>
+                  {/* Cards de resumo */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                      <div className="flex items-center gap-2 text-sm text-blue-600 mb-1">
+                        <Calendar size={14} />
+                        Dias de Direito
+                      </div>
+                      <div className="text-2xl font-bold text-blue-700">{resumo.diasDireito}</div>
+                    </div>
+                    <div className="bg-green-50 rounded-lg p-4 border border-green-100">
+                      <div className="flex items-center gap-2 text-sm text-green-600 mb-1">
+                        <TrendingDown size={14} />
+                        Dias Gozados
+                      </div>
+                      <div className="text-2xl font-bold text-green-700">{resumo.diasGozados}</div>
+                    </div>
+                    <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
+                      <div className="flex items-center gap-2 text-sm text-emerald-600 mb-1">
+                        <TrendingUp size={14} />
+                        Dias Disponiveis
+                      </div>
+                      <div className="text-2xl font-bold text-emerald-700">{resumo.diasDisponiveis}</div>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-4 border border-red-100">
+                      <div className="flex items-center gap-2 text-sm text-red-600 mb-1">
+                        <Ban size={14} />
+                        Periodos Vencidos
+                      </div>
+                      <div className="text-2xl font-bold text-red-700">{resumo.periodosVencidos}</div>
+                    </div>
+                  </div>
+
+                  {/* Tabela de extrato */}
+                  <div className="mt-6">
+                    <h3 className="text-lg font-semibold text-cinza-preto mb-3 flex items-center gap-2">
+                      <FileText size={16} />
+                      Movimentacoes
+                    </h3>
+                    {extrato.length === 0 ? (
+                      <EmptyState
+                        icon={<FileText size={40} />}
+                        title="Nenhuma movimentacao"
+                        description="Nenhum registro de ferias encontrado para este funcionario"
+                      />
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableHead>Data</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Descricao</TableHead>
+                          <TableHead>Dias</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableHeader>
+                        <TableBody>
+                          {extrato.map((e, idx) => (
+                            <TableRow key={`${e.referencia_id}-${idx}`}>
+                              <TableCell>
+                                {format(new Date(e.data_movimento + 'T00:00:00'), 'dd/MM/yyyy')}
+                              </TableCell>
+                              <TableCell>
+                                {e.tipo_movimento === 'CRÉDITO' ? (
+                                  <Badge variant="success">CREDITO</Badge>
+                                ) : (
+                                  <Badge variant="danger">DEBITO</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>{e.descricao}</TableCell>
+                              <TableCell>
+                                <span className={e.dias > 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                  {e.dias > 0 ? `+${e.dias}` : e.dias}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                {e.tipo_movimento === 'CRÉDITO' && e.saldo_status
+                                  ? getSaldoStatusBadge(e.saldo_status)
+                                  : '-'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+
+                  {/* Tabela de periodos aquisitivos */}
+                  <div className="mt-6">
+                    <h3 className="text-lg font-semibold text-cinza-preto mb-3 flex items-center gap-2">
+                      <Clock size={16} />
+                      Periodos Aquisitivos
+                    </h3>
+                    {saldos.length === 0 ? (
+                      <EmptyState
+                        icon={<Clock size={40} />}
+                        title="Nenhum periodo"
+                        description="Nenhum periodo aquisitivo encontrado para este funcionario"
+                      />
+                    ) : (
+                      <div className="space-y-3">
+                        {saldos.map((s) => {
+                          const usados = (s.dias_gozados || 0) + (s.dias_vendidos || 0)
+                          const percentual = s.dias_direito > 0 ? Math.min(100, (usados / s.dias_direito) * 100) : 0
+                          return (
+                            <div key={s.id} className="border border-gray-200 rounded-lg p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="font-medium text-cinza-preto">
+                                  {format(new Date(s.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a {format(new Date(s.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')}
+                                </div>
+                                {getSaldoStatusBadge(s.status)}
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mb-3">
+                                <div>
+                                  <span className="text-gray-500">Direito:</span>{' '}
+                                  <span className="font-medium">{s.dias_direito} dias</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Gozados:</span>{' '}
+                                  <span className="font-medium">{s.dias_gozados} dias</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Vendidos:</span>{' '}
+                                  <span className="font-medium">{s.dias_vendidos} dias</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Restantes:</span>{' '}
+                                  <span className="font-medium text-emerald-600">{s.dias_restantes} dias</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-500">Vencimento:</span>{' '}
+                                  <span className="font-medium">{format(new Date(s.data_vencimento + 'T00:00:00'), 'dd/MM/yyyy')}</span>
+                                </div>
+                              </div>
+                              {/* Barra de progresso */}
+                              <div className="w-full bg-gray-100 rounded-full h-2">
+                                <div
+                                  className={`h-2 rounded-full transition-all ${
+                                    s.status === 'Vencido' ? 'bg-red-500' :
+                                    s.status === 'Gozado' ? 'bg-gray-400' :
+                                    s.status === 'Parcial' ? 'bg-amber-500' :
+                                    'bg-green-500'
+                                  }`}
+                                  style={{ width: `${percentual}%` }}
+                                />
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {usados} de {s.dias_direito} dias utilizados ({Math.round(percentual)}%)
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
       </Card>
 
       {/* Modals */}
