@@ -28,6 +28,8 @@ export interface Ocorrencia {
   valor?: number
   arquivo_url?: string
   observacao?: string
+  descontar_ferias?: boolean
+  ferias_saldo_id?: string
   created_at?: string
 }
 
@@ -208,6 +210,8 @@ export function useOcorrencias() {
     valor?: number
     arquivo_url?: string
     observacao?: string
+    descontar_ferias?: boolean
+    ferias_saldo_id?: string
   }) => {
     try {
       const { data, error } = await supabase

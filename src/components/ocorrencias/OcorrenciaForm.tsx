@@ -8,8 +8,9 @@ import { Select } from '@/components/ui/Select'
 import { Autocomplete } from '@/components/ui/Autocomplete'
 import { createClient } from '@/lib/supabase'
 import { useOcorrencias, type TipoOcorrencia } from '@/hooks/useOcorrencias'
+import { type FeriasSaldo } from '@/hooks/useFerias'
 import { Upload } from 'lucide-react'
-import { differenceInCalendarDays } from 'date-fns'
+import { differenceInCalendarDays, format } from 'date-fns'
 
 interface OcorrenciaFormProps {
   open: boolean
@@ -30,6 +31,8 @@ export interface OcorrenciaFormData {
   valor: number | null
   arquivo_url: string | null
   observacao: string
+  descontar_ferias: boolean
+  ferias_saldo_id: string | null
 }
 
 export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcionarioNome, tipos }: OcorrenciaFormProps) {
@@ -38,6 +41,7 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [funcionarios, setFuncionarios] = useState<{ value: string; label: string; sublabel: string }[]>([])
+  const [periodosDisponiveis, setPeriodosDisponiveis] = useState<FeriasSaldo[]>([])
 
   const [form, setForm] = useState<OcorrenciaFormData>({
     funcionario_id: funcionarioId || '',
@@ -49,6 +53,8 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
     valor: null,
     arquivo_url: null,
     observacao: '',
+    descontar_ferias: false,
+    ferias_saldo_id: null,
   })
 
   useEffect(() => {
@@ -56,6 +62,25 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
       loadFuncionarios()
     }
   }, [open, funcionarioId])
+
+  useEffect(() => {
+    if (form.funcionario_id && form.descontar_ferias) {
+      loadPeriodosDisponiveis(form.funcionario_id)
+    } else {
+      setPeriodosDisponiveis([])
+    }
+  }, [form.funcionario_id, form.descontar_ferias])
+
+  async function loadPeriodosDisponiveis(funcId: string) {
+    const { data } = await supabase
+      .from('ferias_saldo')
+      .select('*')
+      .eq('funcionario_id', funcId)
+      .in('status', ['Disponível', 'Parcial'])
+      .order('periodo_aquisitivo_inicio')
+
+    setPeriodosDisponiveis((data || []) as FeriasSaldo[])
+  }
 
   useEffect(() => {
     if (form.data_inicio && form.data_fim) {
@@ -113,6 +138,8 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
         valor: null,
         arquivo_url: null,
         observacao: '',
+        descontar_ferias: false,
+        ferias_saldo_id: null,
       })
       onClose()
     } finally {
@@ -193,6 +220,36 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
               <input type="file" className="hidden" onChange={handleFileUpload} disabled={uploading || !form.funcionario_id} />
             </label>
           </div>
+        </div>
+
+        <div className="space-y-3">
+          <label className="flex items-center gap-2 text-sm text-cinza-preto">
+            <input
+              type="checkbox"
+              checked={form.descontar_ferias}
+              onChange={(e) => setForm({
+                ...form,
+                descontar_ferias: e.target.checked,
+                ferias_saldo_id: e.target.checked ? form.ferias_saldo_id : null,
+              })}
+              className="rounded border-gray-300 text-laranja focus:ring-laranja"
+              disabled={!form.funcionario_id}
+            />
+            Descontar dias das ferias
+          </label>
+
+          {form.descontar_ferias && (
+            <Select
+              label="Periodo Aquisitivo *"
+              value={form.ferias_saldo_id || ''}
+              onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value || null })}
+              options={periodosDisponiveis.map((p) => ({
+                value: p.id,
+                label: `${format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')} (${p.dias_restantes} dias restantes)`,
+              }))}
+              placeholder="Selecione o periodo"
+            />
+          )}
         </div>
 
         <div>

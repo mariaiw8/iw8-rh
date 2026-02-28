@@ -7,6 +7,8 @@ import { toast } from 'sonner'
 export interface FeriasSaldo {
   id: string
   funcionario_id: string
+  periodo_aquisitivo_inicio: string
+  periodo_aquisitivo_fim: string
   periodo_inicio: string
   periodo_fim: string
   dias_direito: number
@@ -14,7 +16,23 @@ export interface FeriasSaldo {
   dias_vendidos: number
   dias_restantes: number
   data_vencimento: string
-  status: string
+  status: 'Disponível' | 'Parcial' | 'Gozado' | 'Vencido'
+}
+
+export interface FeriasExtrato {
+  funcionario_id: string
+  nome: string
+  codigo: string
+  tipo_movimento: 'CRÉDITO' | 'DÉBITO'
+  descricao: string
+  data_movimento: string
+  dias: number
+  referencia_id: string
+  referencia_tabela: string
+  periodo_aquisitivo_inicio?: string
+  periodo_aquisitivo_fim?: string
+  data_vencimento?: string
+  saldo_status?: string
 }
 
 export interface Ferias {
@@ -344,6 +362,55 @@ export function useFerias() {
     }
   }, [])
 
+  const loadExtrato = useCallback(async (funcionarioId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('vw_ferias_extrato')
+        .select('*')
+        .eq('funcionario_id', funcionarioId)
+        .order('data_movimento', { ascending: false })
+
+      if (error) throw error
+      return (data || []) as FeriasExtrato[]
+    } catch (err) {
+      console.error('Erro ao carregar extrato:', err)
+      return []
+    }
+  }, [])
+
+  const loadSaldos = useCallback(async (funcionarioId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('ferias_saldo')
+        .select('*')
+        .eq('funcionario_id', funcionarioId)
+        .order('periodo_aquisitivo_inicio', { ascending: false })
+
+      if (error) throw error
+      return (data || []) as FeriasSaldo[]
+    } catch (err) {
+      console.error('Erro ao carregar saldos:', err)
+      return []
+    }
+  }, [])
+
+  const loadPeriodosDisponiveis = useCallback(async (funcionarioId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('ferias_saldo')
+        .select('*')
+        .eq('funcionario_id', funcionarioId)
+        .in('status', ['Disponível', 'Parcial'])
+        .order('periodo_aquisitivo_inicio')
+
+      if (error) throw error
+      return (data || []) as FeriasSaldo[]
+    } catch (err) {
+      console.error('Erro ao carregar periodos disponiveis:', err)
+      return []
+    }
+  }, [])
+
   return {
     loading,
     loadFeriasAVencer,
@@ -358,5 +425,8 @@ export function useFerias() {
     loadFeriasColetivas,
     createFeriasColetivas,
     deleteFeriasColetivas,
+    loadExtrato,
+    loadSaldos,
+    loadPeriodosDisponiveis,
   }
 }
