@@ -20,6 +20,16 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { format, differenceInYears, differenceInMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+
+function safeFormat(dateStr: string | null | undefined, fmt: string = 'dd/MM/yyyy'): string {
+  if (!dateStr) return '-'
+  try {
+    return format(new Date(dateStr + 'T00:00:00'), fmt)
+  } catch {
+    return dateStr
+  }
+}
+
 import { useFerias, type FeriasSaldo, type Ferias, type FeriasExtrato } from '@/hooks/useFerias'
 import { useOcorrencias, type Ocorrencia, type TipoOcorrencia } from '@/hooks/useOcorrencias'
 import { SaldoFerias } from '@/components/ferias/SaldoFerias'
@@ -133,6 +143,7 @@ export default function FuncionarioDetailPage() {
     horario_sex_almoco_inicio?: string; horario_sex_almoco_fim?: string;
   }[]>([])
   const [funcoes, setFuncoes] = useState<{ id: string; titulo: string; setor_id?: string; cbo?: string }[]>([])
+  const [motivosDesligamento, setMotivosDesligamento] = useState<{ id: string; titulo: string }[]>([])
 
   const { register, handleSubmit, watch, reset, control, setValue, formState: { errors, isSubmitting } } = useForm<FuncionarioFormData>({
     resolver: zodResolver(funcionarioSchema),
@@ -164,11 +175,12 @@ export default function FuncionarioDetailPage() {
   const loadFuncionario = useCallback(async () => {
     setLoading(true)
     try {
-      const [funcRes, uniRes, setRes, funRes] = await Promise.all([
+      const [funcRes, uniRes, setRes, funRes, motivosRes] = await Promise.all([
         supabase.from('funcionarios').select('*').eq('id', id).single(),
         supabase.from('unidades').select('id, titulo').order('titulo'),
         supabase.from('setores').select('id, titulo, unidade_id, horario_seg_qui_entrada, horario_seg_qui_saida, horario_seg_qui_almoco_inicio, horario_seg_qui_almoco_fim, horario_sex_entrada, horario_sex_saida, horario_sex_almoco_inicio, horario_sex_almoco_fim').order('titulo'),
         supabase.from('funcoes').select('id, titulo, setor_id, cbo').order('titulo'),
+        supabase.from('motivos_desligamento').select('id, titulo').order('titulo'),
       ])
 
       if (funcRes.error) {
@@ -183,6 +195,7 @@ export default function FuncionarioDetailPage() {
       setUnidades(uniRes.data || [])
       setSetores(setRes.data || [])
       setFuncoes(funRes.data || [])
+      if (!motivosRes.error) setMotivosDesligamento(motivosRes.data || [])
 
       // Carregar familiares da tabela "familia"
       let familiares: { id?: string; nome: string; parentesco: string; data_nascimento?: string }[] = []
@@ -690,7 +703,17 @@ export default function FuncionarioDetailPage() {
               </div>
               {dataDesligamento && (
                 <div className="mt-4">
-                  <Input label="Motivo do Desligamento" {...register('motivo_desligamento')} disabled={!editing} />
+                  {motivosDesligamento.length > 0 ? (
+                    <Select
+                      label="Motivo do Desligamento"
+                      {...register('motivo_desligamento')}
+                      options={motivosDesligamento.map((m) => ({ value: m.titulo, label: m.titulo }))}
+                      placeholder="Selecione o motivo"
+                      disabled={!editing}
+                    />
+                  ) : (
+                    <Input label="Motivo do Desligamento" {...register('motivo_desligamento')} disabled={!editing} />
+                  )}
                 </div>
               )}
             </Card>
@@ -942,7 +965,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
         .from('tipos_transacao')
         .select('id')
         .eq('titulo', 'Venda de Férias')
-        .single()
+        .maybeSingle()
 
       if (tipoVenda && feriasRec) {
         const inicio = saldoData?.periodo_aquisitivo_inicio || ''
@@ -1039,10 +1062,10 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
           {proximaFerias ? (
             <>
               <p className="text-lg font-bold text-cinza-preto">
-                {format(new Date(proximaFerias.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}
+                {safeFormat(proximaFerias.data_inicio)}
               </p>
               <p className="text-xs text-cinza-estrutural mt-1">
-                ate {format(new Date(proximaFerias.data_fim + 'T00:00:00'), 'dd/MM/yyyy')} ({proximaFerias.dias} dias)
+                ate {safeFormat(proximaFerias.data_fim)} ({proximaFerias.dias} dias)
               </p>
             </>
           ) : (
@@ -1126,7 +1149,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
                   onClick={() => setEditingExtrato(e)}
                 >
                   <TableCell>
-                    {format(new Date(e.data_movimento + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {safeFormat(e.data_movimento)}
                   </TableCell>
                   <TableCell>
                     {e.tipo_movimento === 'CRÉDITO' ? (
@@ -1184,11 +1207,11 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
                   <TableRow key={f.id}>
                     <TableCell>
                       {saldo
-                        ? `${format(new Date(saldo.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yy')} - ${format(new Date(saldo.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yy')}`
+                        ? `${safeFormat(saldo.periodo_aquisitivo_inicio, 'dd/MM/yy')} - ${safeFormat(saldo.periodo_aquisitivo_fim, 'dd/MM/yy')}`
                         : '-'}
                     </TableCell>
-                    <TableCell>{format(new Date(f.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
-                    <TableCell>{format(new Date(f.data_fim + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
+                    <TableCell>{safeFormat(f.data_inicio)}</TableCell>
+                    <TableCell>{safeFormat(f.data_fim)}</TableCell>
                     <TableCell>{f.dias}</TableCell>
                     <TableCell>{f.tipo}</TableCell>
                     <TableCell>
@@ -1429,7 +1452,7 @@ function OcorrenciasTab({ funcionarioId, funcionarioNome }: { funcionarioId: str
             <TableBody>
               {filtered.map((o) => (
                 <TableRow key={o.id}>
-                  <TableCell>{format(new Date(o.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
+                  <TableCell>{safeFormat(o.data_inicio)}</TableCell>
                   <TableCell>
                     <span
                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"

@@ -187,7 +187,7 @@ export default function FinanceiroGeralPage() {
                   <p className="text-sm font-medium text-cinza-estrutural">Custo por Setor</p>
                 </div>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
                     <BarChart data={chartSetores} layout="vertical" margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis

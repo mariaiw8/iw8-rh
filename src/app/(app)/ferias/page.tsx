@@ -19,6 +19,15 @@ import { createClient } from '@/lib/supabase'
 import { Plus, AlertTriangle, Calendar, Users, Trash2, FileText, TrendingUp, TrendingDown, Clock, Ban, DollarSign } from 'lucide-react'
 import { format } from 'date-fns'
 
+function safeFormat(dateStr: string | null | undefined, fmt: string = 'dd/MM/yyyy'): string {
+  if (!dateStr) return '-'
+  try {
+    return format(new Date(dateStr + 'T00:00:00'), fmt)
+  } catch {
+    return dateStr
+  }
+}
+
 function getSituacaoStyle(situacao: string) {
   switch (situacao) {
     case 'VENCIDA': return 'bg-red-100 text-red-700 border-red-200'
@@ -211,7 +220,7 @@ export default function FeriasPage() {
         .from('tipos_transacao')
         .select('id')
         .eq('titulo', 'Venda de Férias')
-        .single()
+        .maybeSingle()
 
       if (tipoVenda && feriasRec) {
         const inicio = saldoData?.periodo_aquisitivo_inicio || ''
@@ -347,7 +356,7 @@ export default function FeriasPage() {
                   <TableCell>{f.periodo_aquisitivo}</TableCell>
                   <TableCell>{f.dias_restantes}</TableCell>
                   <TableCell>
-                    {format(new Date(f.data_vencimento + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {safeFormat(f.data_vencimento)}
                   </TableCell>
                   <TableCell>
                     {f.dias_para_vencer < 0
@@ -405,10 +414,10 @@ export default function FeriasPage() {
                   <TableCell>{f.unidade || '-'}</TableCell>
                   <TableCell>{f.setor || '-'}</TableCell>
                   <TableCell>
-                    {format(new Date(f.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {safeFormat(f.data_inicio)}
                   </TableCell>
                   <TableCell>
-                    {format(new Date(f.data_fim + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {safeFormat(f.data_fim)}
                   </TableCell>
                   <TableCell>{f.dias}</TableCell>
                   <TableCell>{getStatusBadge(f.status)}</TableCell>
@@ -456,8 +465,8 @@ export default function FeriasPage() {
               {feriasColetivas.map((fc) => (
                 <TableRow key={fc.id}>
                   <TableCell className="font-medium">{fc.titulo}</TableCell>
-                  <TableCell>{format(new Date(fc.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
-                  <TableCell>{format(new Date(fc.data_fim + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
+                  <TableCell>{safeFormat(fc.data_inicio)}</TableCell>
+                  <TableCell>{safeFormat(fc.data_fim)}</TableCell>
                   <TableCell>{fc.dias}</TableCell>
                   <TableCell>{fc.unidade_nome || 'Todas'}</TableCell>
                   <TableCell>{fc.setor_nome || 'Todos'}</TableCell>
@@ -574,7 +583,7 @@ export default function FeriasPage() {
                               onClick={() => setEditingExtrato(e)}
                             >
                               <TableCell>
-                                {format(new Date(e.data_movimento + 'T00:00:00'), 'dd/MM/yyyy')}
+                                {safeFormat(e.data_movimento)}
                               </TableCell>
                               <TableCell>
                                 {e.tipo_movimento === 'CRÉDITO' ? (
@@ -622,7 +631,7 @@ export default function FeriasPage() {
                             <div key={s.id} className="border border-gray-200 rounded-lg p-4">
                               <div className="flex items-center justify-between mb-2">
                                 <div className="font-medium text-cinza-preto">
-                                  {format(new Date(s.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a {format(new Date(s.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')}
+                                  {safeFormat(s.periodo_aquisitivo_inicio)} a {safeFormat(s.periodo_aquisitivo_fim)}
                                 </div>
                                 {getSaldoStatusBadge(s.status)}
                               </div>
@@ -645,7 +654,7 @@ export default function FeriasPage() {
                                 </div>
                                 <div>
                                   <span className="text-gray-500">Vencimento:</span>{' '}
-                                  <span className="font-medium">{format(new Date(s.data_vencimento + 'T00:00:00'), 'dd/MM/yyyy')}</span>
+                                  <span className="font-medium">{safeFormat(s.data_vencimento)}</span>
                                 </div>
                               </div>
                               {/* Barra de progresso */}

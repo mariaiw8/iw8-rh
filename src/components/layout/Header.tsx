@@ -25,16 +25,43 @@ const breadcrumbLabels: Record<string, string> = {
   relatorios: 'Relatorios',
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export function Header() {
   const pathname = usePathname()
   const supabase = createClient()
   const [userEmail, setUserEmail] = useState<string>('')
+  const [dynamicLabels, setDynamicLabels] = useState<Record<string, string>>({})
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserEmail(data.user?.email || '')
     })
   }, [supabase.auth])
+
+  // Resolve employee names for UUID breadcrumb segments
+  useEffect(() => {
+    const parts = pathname.split('/').filter(Boolean)
+    parts.forEach((part, idx) => {
+      if (!UUID_REGEX.test(part)) return
+      if (dynamicLabels[part]) return
+      if (idx > 0 && parts[idx - 1] === 'funcionarios') {
+        supabase
+          .from('funcionarios')
+          .select('nome_completo, nome')
+          .eq('id', part)
+          .single()
+          .then(({ data }) => {
+            if (data) {
+              const nome = (data.nome_completo || data.nome || '').toString()
+              if (nome) {
+                setDynamicLabels((prev) => ({ ...prev, [part]: nome }))
+              }
+            }
+          })
+      }
+    })
+  }, [pathname, supabase])
 
   function getTitle() {
     if (pathname.startsWith('/funcionarios/') && pathname.includes('/financeiro')) return 'Painel Financeiro'
@@ -53,7 +80,7 @@ export function Header() {
     let currentPath = ''
     for (const part of parts) {
       currentPath += `/${part}`
-      const label = breadcrumbLabels[part] || part
+      const label = dynamicLabels[part] || breadcrumbLabels[part] || (UUID_REGEX.test(part) ? '...' : part)
       crumbs.push({ label, href: currentPath })
     }
 

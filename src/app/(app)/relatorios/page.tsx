@@ -203,15 +203,52 @@ export default function RelatoriosPage() {
     const currentYear = now.getFullYear()
     const currentMonth = now.getMonth() + 1
 
-    // Load monthly data from vw_absenteismo_mensal
-    const { data: mensal } = await supabase
+    // Try loading monthly data from vw_absenteismo_mensal
+    const { data: mensal, error: mensalError } = await supabase
       .from('vw_absenteismo_mensal')
       .select('*')
       .order('ano', { ascending: false })
       .order('mes', { ascending: false })
       .limit(12)
 
-    const mensalData = (mensal || []) as AbsenteismoMensal[]
+    let mensalData: AbsenteismoMensal[] = []
+    if (!mensalError && mensal) {
+      mensalData = mensal as AbsenteismoMensal[]
+    } else {
+      // Fallback: compute monthly absenteismo from ocorrencias
+      const { data: totalAtivos } = await supabase.from('funcionarios').select('id', { count: 'exact', head: true }).eq('status', 'Ativo')
+      const totalFunc = totalAtivos?.length || (totalAtivos as unknown as { count: number })?.count || 1
+
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(currentYear, currentMonth - 1 - i, 1)
+        const ano = d.getFullYear()
+        const mes = d.getMonth() + 1
+        const inicio = `${ano}-${String(mes).padStart(2, '0')}-01`
+        const lastDay = new Date(ano, mes, 0).getDate()
+        const fim = `${ano}-${String(mes).padStart(2, '0')}-${lastDay}`
+
+        const { data: ocs } = await supabase
+          .from('ocorrencias')
+          .select('dias, funcionario_id')
+          .eq('absenteismo', true)
+          .gte('data_inicio', inicio)
+          .lte('data_inicio', fim)
+
+        const totalDias = (ocs || []).reduce((s: number, o: Record<string, number>) => s + (o.dias || 0), 0)
+        const funcIds = new Set((ocs || []).map((o: Record<string, string>) => o.funcionario_id))
+        const diasUteis = lastDay * 0.72 // approximate working days
+        const taxa = totalFunc > 0 && diasUteis > 0 ? (totalDias / (totalFunc * diasUteis)) * 100 : 0
+
+        mensalData.push({
+          ano, mes,
+          total_funcionarios: funcIds.size,
+          total_dias_ausentes: totalDias,
+          total_ocorrencias: (ocs || []).length,
+          taxa_absenteismo: Math.round(taxa * 100) / 100,
+        })
+      }
+      mensalData.reverse()
+    }
     setAbsenteismoMensal(mensalData)
 
     // Current month summary
@@ -226,7 +263,7 @@ export default function RelatoriosPage() {
       setAbsenteismoResumo({ taxa: 0, funcionarios: 0, diasPerdidos: 0 })
     }
 
-    // Load detailed data from vw_absenteismo
+    // Try loading detailed data from vw_absenteismo
     let detalheQuery = supabase.from('vw_absenteismo').select('*')
     if (filtroUnidade) {
       detalheQuery = detalheQuery.eq('unidade_id', filtroUnidade)
@@ -235,8 +272,59 @@ export default function RelatoriosPage() {
       detalheQuery = detalheQuery.eq('setor_id', filtroSetor)
     }
 
-    const { data: detalhe } = await detalheQuery.order('total_dias', { ascending: false })
-    setAbsenteismoDetalhe((detalhe || []).map((d: Record<string, unknown>) => ({
+    const { data: detalhe, error: detalheError } = await detalheQuery.order('total_dias', { ascending: false })
+
+    let detalheRows: Record<string, unknown>[] = []
+    if (!detalheError && detalhe) {
+      detalheRows = detalhe
+    } else {
+      // Fallback: compute detail from ocorrencias + funcionarios
+      let ocsQuery = supabase
+        .from('ocorrencias')
+        .select('funcionario_id, dias')
+        .eq('absenteismo', true)
+
+      const { data: ocs } = await ocsQuery
+      if (ocs && ocs.length > 0) {
+        const byFunc: Record<string, { totalDias: number; totalOcs: number }> = {}
+        ocs.forEach((o: Record<string, unknown>) => {
+          const fid = o.funcionario_id as string
+          if (!byFunc[fid]) byFunc[fid] = { totalDias: 0, totalOcs: 0 }
+          byFunc[fid].totalDias += (o.dias as number) || 0
+          byFunc[fid].totalOcs++
+        })
+
+        const funcIds = Object.keys(byFunc)
+        const { data: funcs } = await supabase
+          .from('funcionarios')
+          .select('id, nome_completo, setor_id, unidade_id')
+          .in('id', funcIds)
+
+        const { data: setoresData } = await supabase.from('setores').select('id, titulo')
+        const { data: unidadesData } = await supabase.from('unidades').select('id, titulo')
+        const setoresMap = new Map((setoresData || []).map((s: Record<string, string>) => [s.id, s.titulo]))
+        const unidadesMap = new Map((unidadesData || []).map((u: Record<string, string>) => [u.id, u.titulo]))
+
+        detalheRows = (funcs || [])
+          .filter((f: Record<string, string>) => {
+            if (filtroUnidade && f.unidade_id !== filtroUnidade) return false
+            if (filtroSetor && f.setor_id !== filtroSetor) return false
+            return true
+          })
+          .map((f: Record<string, string>) => ({
+            funcionario_id: f.id,
+            nome: f.nome_completo,
+            setor: setoresMap.get(f.setor_id) || '',
+            unidade: unidadesMap.get(f.unidade_id) || '',
+            total_dias: byFunc[f.id]?.totalDias || 0,
+            total_ocorrencias: byFunc[f.id]?.totalOcs || 0,
+            taxa: 0,
+          }))
+          .sort((a, b) => (b.total_dias as number) - (a.total_dias as number))
+      }
+    }
+
+    setAbsenteismoDetalhe(detalheRows.map((d: Record<string, unknown>) => ({
       funcionario_id: (d.funcionario_id || d.id || '') as string,
       nome: (d.nome || d.funcionario_nome || d.nome_completo || '') as string,
       setor: (d.setor || d.setor_titulo || '') as string,
@@ -247,7 +335,7 @@ export default function RelatoriosPage() {
     })))
 
     // Set data for the table export
-    setData((detalhe || []).map((d: Record<string, unknown>) => ({
+    setData(detalheRows.map((d: Record<string, unknown>) => ({
       nome: (d.nome || d.funcionario_nome || d.nome_completo || '') as string,
       setor: (d.setor || d.setor_titulo || '') as string,
       unidade: (d.unidade || d.unidade_titulo || '') as string,

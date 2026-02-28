@@ -39,7 +39,7 @@ export function TurnoverChart({ data }: { data: { mes: string; valor: number }[]
         </CardTitle>
       </CardHeader>
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <BarChart data={data} margin={{ left: 0, right: 20, bottom: 0 }}>
             <XAxis dataKey="mes" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 12 }} unit="%" />
@@ -70,7 +70,7 @@ export function HeadcountChart({ data }: { data: { mes: string; total: number }[
         </CardTitle>
       </CardHeader>
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <AreaChart data={data} margin={{ left: 0, right: 20, bottom: 0 }}>
             <defs>
               <linearGradient id="headcountGrad" x1="0" y1="0" x2="0" y2="1">
@@ -113,7 +113,7 @@ export function SetorTipoChart({ data }: { data: { tipo: string; funcionarios: n
         </CardTitle>
       </CardHeader>
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <PieChart>
             <Pie
               data={data}
@@ -157,7 +157,7 @@ export function TempoEmpresaChart({ data }: { data: { faixa: string; funcionario
         </CardTitle>
       </CardHeader>
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <BarChart data={data} layout="vertical" margin={{ left: 10, right: 20 }}>
             <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
             <YAxis type="category" dataKey="faixa" tick={{ fontSize: 11 }} width={80} />
@@ -192,7 +192,7 @@ export function OcorrenciasCategoriaChart({ data }: { data: { categoria: string;
         </CardTitle>
       </CardHeader>
       <div className="h-64">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <PieChart>
             <Pie
               data={data}

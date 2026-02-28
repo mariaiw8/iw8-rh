@@ -29,7 +29,7 @@ export function SalarioChart({ salarios }: SalarioChartProps) {
     <div className="bg-white rounded-xl shadow-sm p-6">
       <h3 className="text-lg font-bold text-cinza-preto mb-4">Evolucao Salarial</h3>
       <div className="h-72">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
           <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
             <XAxis dataKey="data" tick={{ fontSize: 12 }} />

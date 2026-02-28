@@ -48,6 +48,7 @@ const navItems: NavItem[] = [
       { label: 'Unidades', href: '/cadastros?tab=unidades', icon: <MapPin size={18} /> },
       { label: 'Setores', href: '/cadastros?tab=setores', icon: <Layers size={18} /> },
       { label: 'Funcoes', href: '/cadastros?tab=funcoes', icon: <Briefcase size={18} /> },
+      { label: 'Mot. Desligamento', href: '/cadastros?tab=motivos_desligamento', icon: <LogOut size={18} /> },
     ],
   },
   {

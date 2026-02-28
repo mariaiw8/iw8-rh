@@ -211,7 +211,7 @@ export function useOcorrencias() {
       .select('id')
       .eq('origem_tabela', 'ocorrencias')
       .eq('origem_id', ocorrencia.id)
-      .single()
+      .maybeSingle()
 
     if (transExistente && valor > 0) {
       // Update existing transaction
@@ -233,7 +233,7 @@ export function useOcorrencias() {
         .from('tipos_transacao')
         .select('id')
         .eq('titulo', 'Ocorrência com Valor')
-        .single()
+        .maybeSingle()
 
       if (tipoTransacao) {
         const { data: tipoOc } = await supabase.from('tipos_ocorrencia').select('titulo').eq('id', ocorrencia.tipo_ocorrencia_id).single()
