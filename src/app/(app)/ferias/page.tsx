@@ -87,6 +87,9 @@ export default function FeriasPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
+      // Atualizar status de ferias antes de carregar dados
+      await supabase.rpc('fn_atualizar_status_ferias')
+
       const [av, pf, fc] = await Promise.all([
         loadFeriasAVencer(),
         loadProximasFerias(),
@@ -98,7 +101,7 @@ export default function FeriasPage() {
     } finally {
       setLoading(false)
     }
-  }, [loadFeriasAVencer, loadProximasFerias, loadFeriasColetivas])
+  }, [loadFeriasAVencer, loadProximasFerias, loadFeriasColetivas, supabase])
 
   useEffect(() => {
     loadData()
@@ -115,16 +118,18 @@ export default function FeriasPage() {
   }, [selectedFuncionarioId])
 
   async function loadFuncionarios() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('funcionarios')
       .select('id, nome_completo, codigo')
       .eq('status', 'Ativo')
       .order('nome_completo')
 
+    if (error) console.error('Erro ao carregar funcionarios:', error)
+
     setFuncionarios(
       (data || []).map((f: Record<string, string>) => ({
         value: f.id,
-        label: `${f.nome_completo} (${f.codigo || 'sem codigo'})`,
+        label: `${f.nome_completo || 'Sem nome'} (${f.codigo || 'sem codigo'})`,
       }))
     )
   }
@@ -230,7 +235,7 @@ export default function FeriasPage() {
           descricao: `Venda de ${dias} dias de ferias — Periodo ${inicio} a ${fim}`,
           origem_tabela: 'ferias',
           origem_id: feriasRec.id,
-        })
+        }).select()
       }
     }
     if (ok && selectedFuncionarioId) {
@@ -249,6 +254,7 @@ export default function FeriasPage() {
             .from('ferias_saldo')
             .update(updatePayload)
             .eq('id', item.referencia_id)
+            .select()
           if (error) throw error
         }
       } else if (item.referencia_tabela === 'ferias') {
@@ -260,6 +266,7 @@ export default function FeriasPage() {
             .from('ferias')
             .update(updatePayload)
             .eq('id', item.referencia_id)
+            .select()
           if (error) throw error
         }
       } else if (item.referencia_tabela === 'ocorrencias') {
@@ -271,6 +278,7 @@ export default function FeriasPage() {
             .from('ocorrencias')
             .update(updatePayload)
             .eq('id', item.referencia_id)
+            .select()
           if (error) throw error
         }
       }

@@ -199,36 +199,21 @@ export function useFerias() {
       const { data, error } = await supabase
         .from('ferias')
         .insert({
-          ...payload,
+          funcionario_id: payload.funcionario_id,
+          ferias_saldo_id: payload.periodo_aquisitivo_id || null,
+          data_inicio: payload.data_inicio,
+          data_fim: payload.data_fim,
+          dias: payload.dias,
           tipo: payload.tipo || 'Individual',
+          abono_pecuniario: payload.abono_pecuniario || false,
+          dias_vendidos: payload.abono_pecuniario ? (payload.dias_vendidos || 0) : 0,
           status: payload.status || 'Programada',
+          observacao: payload.observacao || null,
         })
         .select()
         .single()
 
       if (error) throw error
-
-      // Update saldo if periodo_aquisitivo_id is provided
-      if (payload.periodo_aquisitivo_id) {
-        const { data: saldo } = await supabase
-          .from('ferias_saldo')
-          .select('dias_gozados, dias_vendidos')
-          .eq('id', payload.periodo_aquisitivo_id)
-          .single()
-
-        if (saldo) {
-          const updatePayload: Record<string, number> = {
-            dias_gozados: (saldo.dias_gozados || 0) + payload.dias,
-          }
-          if (payload.dias_vendidos && payload.dias_vendidos > 0) {
-            updatePayload.dias_vendidos = (saldo.dias_vendidos || 0) + payload.dias_vendidos
-          }
-          await supabase
-            .from('ferias_saldo')
-            .update(updatePayload)
-            .eq('id', payload.periodo_aquisitivo_id)
-        }
-      }
 
       toast.success('Ferias registradas com sucesso')
       return data
@@ -245,6 +230,7 @@ export function useFerias() {
         .from('ferias')
         .update(payload)
         .eq('id', id)
+        .select()
 
       if (error) throw error
       toast.success('Ferias atualizadas com sucesso')
@@ -291,6 +277,7 @@ export function useFerias() {
         .from('ferias_saldo')
         .update({ dias_vendidos: (saldo.dias_vendidos || 0) + diasVender })
         .eq('id', periodoId)
+        .select()
 
       if (error) throw error
       toast.success(`${diasVender} dias vendidos com sucesso`)
@@ -309,6 +296,7 @@ export function useFerias() {
         .from('ferias_saldo')
         .update({ dias_direito: diasDireito })
         .eq('id', saldoId)
+        .select()
 
       if (error) throw error
       toast.success('Dias de direito atualizados')

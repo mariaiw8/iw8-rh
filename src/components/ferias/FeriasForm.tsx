@@ -87,16 +87,18 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
   }, [form.ferias_saldo_id, form.dias, periodosDisponiveis])
 
   async function loadFuncionarios() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('funcionarios')
       .select('id, nome_completo, codigo')
       .eq('status', 'Ativo')
       .order('nome_completo')
 
+    if (error) console.error('Erro ao carregar funcionarios:', error)
+
     setFuncionarios(
       (data || []).map((f: Record<string, string>) => ({
         value: f.id,
-        label: f.nome_completo,
+        label: f.nome_completo || 'Sem nome',
         sublabel: f.codigo ? `Cod: ${f.codigo}` : '',
       }))
     )

@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase'
 import { useOcorrencias, type TipoOcorrencia } from '@/hooks/useOcorrencias'
 import { type FeriasSaldo } from '@/hooks/useFerias'
 import { Upload } from 'lucide-react'
-import { differenceInCalendarDays, format } from 'date-fns'
+import { formatDateSafe, safeDifferenceInDays } from '@/lib/dateUtils'
 
 interface OcorrenciaFormProps {
   open: boolean
@@ -74,37 +74,39 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
   }, [form.funcionario_id, form.descontar_ferias])
 
   async function loadPeriodosDisponiveis(funcId: string) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('ferias_saldo')
       .select('*')
       .eq('funcionario_id', funcId)
       .in('status', ['Disponível', 'Parcial'])
       .order('periodo_aquisitivo_inicio')
 
+    if (error) {
+      console.error('Erro ao carregar periodos disponiveis:', error)
+    }
     setPeriodosDisponiveis((data || []) as FeriasSaldo[])
   }
 
   useEffect(() => {
     if (form.data_inicio && form.data_fim) {
-      const dias = differenceInCalendarDays(
-        new Date(form.data_fim + 'T00:00:00'),
-        new Date(form.data_inicio + 'T00:00:00')
-      ) + 1
+      const dias = safeDifferenceInDays(form.data_fim, form.data_inicio) + 1
       setForm((prev) => ({ ...prev, dias: dias > 0 ? dias : 1 }))
     }
   }, [form.data_inicio, form.data_fim])
 
   async function loadFuncionarios() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('funcionarios')
       .select('id, nome_completo, codigo')
       .eq('status', 'Ativo')
       .order('nome_completo')
 
+    if (error) console.error('Erro ao carregar funcionarios:', error)
+
     setFuncionarios(
       (data || []).map((f: Record<string, string>) => ({
         value: f.id,
-        label: f.nome_completo || f.nome,
+        label: f.nome_completo || 'Sem nome',
         sublabel: f.codigo ? `Cod: ${f.codigo}` : '',
       }))
     )
@@ -258,7 +260,7 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
               onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value || null })}
               options={periodosDisponiveis.map((p) => ({
                 value: p.id,
-                label: `${format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')} (${p.dias_restantes} dias restantes)`,
+                label: `${formatDateSafe(p.periodo_aquisitivo_inicio)} a ${formatDateSafe(p.periodo_aquisitivo_fim)} (${p.dias_restantes ?? 0} dias restantes)`,
               }))}
               placeholder="Selecione o periodo"
             />

@@ -77,7 +77,7 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
               saldos.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
-                    {formatDateSafe(s.periodo_inicio)} - {formatDateSafe(s.periodo_fim)}
+                    {formatDateSafe(s.periodo_aquisitivo_inicio || s.periodo_inicio)} - {formatDateSafe(s.periodo_aquisitivo_fim || s.periodo_fim)}
                   </TableCell>
                   <TableCell>
                     {editingId === s.id ? (

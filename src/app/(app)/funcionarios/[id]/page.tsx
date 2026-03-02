@@ -326,7 +326,7 @@ export default function FuncionarioDetailPage() {
         horario_sex_saida: restData.sexta_saida || null,
       }
 
-      const { error } = await supabase.from('funcionarios').update(basePayload).eq('id', id)
+      const { error } = await supabase.from('funcionarios').update(basePayload).eq('id', id).select()
       if (error) {
         toast.error('Erro ao salvar: ' + error.message)
         return
@@ -383,9 +383,10 @@ export default function FuncionarioDetailPage() {
 
   function getTempoEmpresa() {
     if (!funcionario?.data_admissao) return null
-    const admissao = new Date((funcionario.data_admissao as string) + 'T00:00:00')
+    const admissao = safeDate(funcionario.data_admissao)
+    if (!admissao) return null
     const ref = funcionario.data_desligamento
-      ? new Date((funcionario.data_desligamento as string) + 'T00:00:00')
+      ? safeDate(funcionario.data_desligamento) || new Date()
       : new Date()
     const anos = differenceInYears(ref, admissao)
     const meses = differenceInMonths(ref, admissao) % 12
@@ -876,6 +877,9 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
   const loadData = useCallback(async () => {
     setLoadingFerias(true)
     try {
+      // Atualizar status de ferias antes de carregar dados
+      await supabase.rpc('fn_atualizar_status_ferias')
+
       const [s, f, e] = await Promise.all([
         loadSaldos(funcionarioId),
         loadFeriasFuncionario(funcionarioId),
@@ -887,7 +891,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
     } finally {
       setLoadingFerias(false)
     }
-  }, [funcionarioId, loadSaldos, loadExtrato, loadFeriasFuncionario])
+  }, [funcionarioId, loadSaldos, loadExtrato, loadFeriasFuncionario, supabase])
 
   useEffect(() => {
     loadData()
@@ -974,7 +978,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
           descricao: `Venda de ${dias} dias de ferias — Periodo ${inicio} a ${fim}`,
           origem_tabela: 'ferias',
           origem_id: feriasRec.id,
-        })
+        }).select()
       }
     }
     if (ok) loadData()
@@ -1003,6 +1007,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
             .from('ferias_saldo')
             .update(updatePayload)
             .eq('id', item.referencia_id)
+            .select()
           if (error) throw error
         }
       } else if (item.referencia_tabela === 'ferias') {
@@ -1014,6 +1019,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
             .from('ferias')
             .update(updatePayload)
             .eq('id', item.referencia_id)
+            .select()
           if (error) throw error
         }
       } else if (item.referencia_tabela === 'ocorrencias') {
@@ -1025,6 +1031,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
             .from('ocorrencias')
             .update(updatePayload)
             .eq('id', item.referencia_id)
+            .select()
           if (error) throw error
         }
       }

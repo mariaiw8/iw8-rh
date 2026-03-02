@@ -82,6 +82,7 @@ export function useOcorrencias() {
         .from('tipos_ocorrencia')
         .update(payload)
         .eq('id', id)
+        .select()
 
       if (error) throw error
       toast.success('Tipo de ocorrencia atualizado')
@@ -223,7 +224,7 @@ export function useOcorrencias() {
         valor: valor,
         data: ocorrencia.data_inicio,
         descricao: `Ocorrencia: ${tipoTitulo} — ${ocorrencia.descricao || ''}`,
-      }).eq('id', transExistente.id)
+      }).eq('id', transExistente.id).select()
     } else if (transExistente && valor <= 0) {
       // Delete transaction if valor is now 0
       await supabase.from('transacoes').delete().eq('id', transExistente.id)
@@ -247,7 +248,7 @@ export function useOcorrencias() {
           descricao: `Ocorrencia: ${tipoTitulo} — ${ocorrencia.descricao || ''}`,
           origem_tabela: 'ocorrencias',
           origem_id: ocorrencia.id,
-        })
+        }).select()
       }
     }
   }
@@ -306,6 +307,7 @@ export function useOcorrencias() {
         .from('ocorrencias')
         .update(payload)
         .eq('id', id)
+        .select()
 
       if (error) throw error
 
