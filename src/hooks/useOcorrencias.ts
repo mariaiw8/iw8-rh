@@ -252,6 +252,36 @@ export function useOcorrencias() {
     }
   }
 
+  // Helper to adjust ferias_saldo.dias_gozados when an ocorrencia is linked
+  async function adjustFeriasSaldo(saldoId: string, diasDelta: number) {
+    const { data: saldo } = await supabase
+      .from('ferias_saldo')
+      .select('dias_direito, dias_gozados, dias_vendidos, data_vencimento')
+      .eq('id', saldoId)
+      .single()
+    if (!saldo) return
+
+    const newGozados = Math.max(0, (saldo.dias_gozados || 0) + diasDelta)
+    const restantes = Math.max(0, (saldo.dias_direito || 0) - newGozados - (saldo.dias_vendidos || 0))
+    const vencido = saldo.data_vencimento && new Date(saldo.data_vencimento + 'T00:00:00') < new Date()
+    let status: string
+    if (vencido && restantes > 0) {
+      status = 'Vencido'
+    } else if (restantes <= 0) {
+      status = 'Gozado'
+    } else if (newGozados + (saldo.dias_vendidos || 0) > 0) {
+      status = 'Parcial'
+    } else {
+      status = 'Disponível'
+    }
+
+    await supabase.from('ferias_saldo').update({
+      dias_gozados: newGozados,
+      dias_restantes: restantes,
+      status,
+    }).eq('id', saldoId)
+  }
+
   const createOcorrencia = useCallback(async (payload: {
     funcionario_id: string
     tipo_ocorrencia_id: string
@@ -291,6 +321,11 @@ export function useOcorrencias() {
         })
       }
 
+      // Deduct from ferias saldo if flagged
+      if (payload.descontar_ferias && payload.ferias_saldo_id) {
+        await adjustFeriasSaldo(payload.ferias_saldo_id, payload.dias || 1)
+      }
+
       toast.success('Ocorrencia registrada com sucesso')
       return data
     } catch (err) {
@@ -302,6 +337,18 @@ export function useOcorrencias() {
 
   const updateOcorrencia = useCallback(async (id: string, payload: Partial<Ocorrencia>) => {
     try {
+      // Load old record to revert ferias saldo if needed
+      const { data: old } = await supabase
+        .from('ocorrencias')
+        .select('dias, descontar_ferias, ferias_saldo_id')
+        .eq('id', id)
+        .single()
+
+      // Revert old ferias saldo
+      if (old?.descontar_ferias && old?.ferias_saldo_id) {
+        await adjustFeriasSaldo(old.ferias_saldo_id, -(old.dias || 0))
+      }
+
       const { error } = await supabase
         .from('ocorrencias')
         .update(payload)
@@ -321,6 +368,14 @@ export function useOcorrencias() {
         })
       }
 
+      // Apply new ferias saldo deduction
+      const newDescontar = payload.descontar_ferias ?? old?.descontar_ferias
+      const newSaldoId = payload.ferias_saldo_id ?? old?.ferias_saldo_id
+      const newDias = payload.dias ?? old?.dias ?? 0
+      if (newDescontar && newSaldoId) {
+        await adjustFeriasSaldo(newSaldoId, newDias)
+      }
+
       toast.success('Ocorrencia atualizada')
       return true
     } catch (err) {
@@ -332,6 +387,13 @@ export function useOcorrencias() {
 
   const deleteOcorrencia = useCallback(async (id: string) => {
     try {
+      // Load record before deleting to revert ferias saldo
+      const { data: old } = await supabase
+        .from('ocorrencias')
+        .select('dias, descontar_ferias, ferias_saldo_id')
+        .eq('id', id)
+        .single()
+
       // Delete linked transaction first
       await supabase.from('transacoes').delete().eq('origem_tabela', 'ocorrencias').eq('origem_id', id)
 
@@ -341,6 +403,12 @@ export function useOcorrencias() {
         .eq('id', id)
 
       if (error) throw error
+
+      // Revert ferias saldo if it was deducting
+      if (old?.descontar_ferias && old?.ferias_saldo_id) {
+        await adjustFeriasSaldo(old.ferias_saldo_id, -(old.dias || 0))
+      }
+
       toast.success('Ocorrencia excluida')
       return true
     } catch (err) {

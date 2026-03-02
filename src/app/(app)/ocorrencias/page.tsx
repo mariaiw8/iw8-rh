@@ -110,6 +110,8 @@ export default function OcorrenciasPage() {
       arquivo_url: data.arquivo_url || undefined,
       observacao: data.observacao || undefined,
       absenteismo: data.absenteismo || false,
+      descontar_ferias: data.descontar_ferias || false,
+      ferias_saldo_id: data.ferias_saldo_id || undefined,
     })
     loadData()
   }

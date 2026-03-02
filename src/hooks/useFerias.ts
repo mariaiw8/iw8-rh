@@ -183,6 +183,34 @@ export function useFerias() {
     }
   }, [])
 
+  // Helper to recalculate dias_restantes and status on a ferias_saldo row
+  const recalcSaldo = useCallback(async (saldoId: string) => {
+    const { data: s } = await supabase
+      .from('ferias_saldo')
+      .select('dias_direito, dias_gozados, dias_vendidos, data_vencimento')
+      .eq('id', saldoId)
+      .single()
+    if (!s) return
+
+    const restantes = Math.max(0, (s.dias_direito || 0) - (s.dias_gozados || 0) - (s.dias_vendidos || 0))
+    const vencido = s.data_vencimento && new Date(s.data_vencimento + 'T00:00:00') < new Date()
+    let status: string
+    if (vencido && restantes > 0) {
+      status = 'Vencido'
+    } else if (restantes <= 0) {
+      status = 'Gozado'
+    } else if ((s.dias_gozados || 0) + (s.dias_vendidos || 0) > 0) {
+      status = 'Parcial'
+    } else {
+      status = 'Disponível'
+    }
+
+    await supabase
+      .from('ferias_saldo')
+      .update({ dias_restantes: restantes, status })
+      .eq('id', saldoId)
+  }, [])
+
   const createFerias = useCallback(async (payload: {
     funcionario_id: string
     data_inicio: string
@@ -196,10 +224,15 @@ export function useFerias() {
     observacao?: string
   }) => {
     try {
+      // Map periodo_aquisitivo_id to the DB column ferias_saldo_id
+      const saldoId = payload.periodo_aquisitivo_id || null
+      const { periodo_aquisitivo_id, ...rest } = payload
+
       const { data, error } = await supabase
         .from('ferias')
         .insert({
-          ...payload,
+          ...rest,
+          ferias_saldo_id: saldoId,
           tipo: payload.tipo || 'Individual',
           status: payload.status || 'Programada',
         })
@@ -208,12 +241,12 @@ export function useFerias() {
 
       if (error) throw error
 
-      // Update saldo if periodo_aquisitivo_id is provided
-      if (payload.periodo_aquisitivo_id) {
+      // Update saldo if linked to a period
+      if (saldoId) {
         const { data: saldo } = await supabase
           .from('ferias_saldo')
           .select('dias_gozados, dias_vendidos')
-          .eq('id', payload.periodo_aquisitivo_id)
+          .eq('id', saldoId)
           .single()
 
         if (saldo) {
@@ -226,8 +259,9 @@ export function useFerias() {
           await supabase
             .from('ferias_saldo')
             .update(updatePayload)
-            .eq('id', payload.periodo_aquisitivo_id)
+            .eq('id', saldoId)
         }
+        await recalcSaldo(saldoId)
       }
 
       toast.success('Ferias registradas com sucesso')
@@ -237,16 +271,62 @@ export function useFerias() {
       toast.error('Erro ao registrar ferias')
       return null
     }
-  }, [])
+  }, [recalcSaldo])
 
   const updateFerias = useCallback(async (id: string, payload: Partial<Ferias>) => {
     try {
+      // Load old record so we can revert saldo
+      const { data: old } = await supabase
+        .from('ferias')
+        .select('dias, dias_vendidos, ferias_saldo_id')
+        .eq('id', id)
+        .single()
+
       const { error } = await supabase
         .from('ferias')
         .update(payload)
         .eq('id', id)
 
       if (error) throw error
+
+      // Revert old saldo
+      if (old?.ferias_saldo_id) {
+        const { data: saldo } = await supabase
+          .from('ferias_saldo')
+          .select('dias_gozados, dias_vendidos')
+          .eq('id', old.ferias_saldo_id)
+          .single()
+        if (saldo) {
+          await supabase.from('ferias_saldo').update({
+            dias_gozados: Math.max(0, (saldo.dias_gozados || 0) - (old.dias || 0)),
+            dias_vendidos: Math.max(0, (saldo.dias_vendidos || 0) - (old.dias_vendidos || 0)),
+          }).eq('id', old.ferias_saldo_id)
+        }
+        await recalcSaldo(old.ferias_saldo_id)
+      }
+
+      // Apply new saldo (reload the updated record)
+      const { data: updated } = await supabase
+        .from('ferias')
+        .select('dias, dias_vendidos, ferias_saldo_id')
+        .eq('id', id)
+        .single()
+
+      if (updated?.ferias_saldo_id) {
+        const { data: saldo } = await supabase
+          .from('ferias_saldo')
+          .select('dias_gozados, dias_vendidos')
+          .eq('id', updated.ferias_saldo_id)
+          .single()
+        if (saldo) {
+          await supabase.from('ferias_saldo').update({
+            dias_gozados: (saldo.dias_gozados || 0) + (updated.dias || 0),
+            dias_vendidos: (saldo.dias_vendidos || 0) + (updated.dias_vendidos || 0),
+          }).eq('id', updated.ferias_saldo_id)
+        }
+        await recalcSaldo(updated.ferias_saldo_id)
+      }
+
       toast.success('Ferias atualizadas com sucesso')
       return true
     } catch (err) {
@@ -254,16 +334,43 @@ export function useFerias() {
       toast.error('Erro ao atualizar ferias')
       return false
     }
-  }, [])
+  }, [recalcSaldo])
 
   const deleteFerias = useCallback(async (id: string) => {
     try {
+      // Load record before deleting to revert saldo
+      const { data: old } = await supabase
+        .from('ferias')
+        .select('dias, dias_vendidos, ferias_saldo_id')
+        .eq('id', id)
+        .single()
+
+      // Delete linked transactions
+      await supabase.from('transacoes').delete().eq('origem_tabela', 'ferias').eq('origem_id', id)
+
       const { error } = await supabase
         .from('ferias')
         .delete()
         .eq('id', id)
 
       if (error) throw error
+
+      // Revert saldo
+      if (old?.ferias_saldo_id) {
+        const { data: saldo } = await supabase
+          .from('ferias_saldo')
+          .select('dias_gozados, dias_vendidos')
+          .eq('id', old.ferias_saldo_id)
+          .single()
+        if (saldo) {
+          await supabase.from('ferias_saldo').update({
+            dias_gozados: Math.max(0, (saldo.dias_gozados || 0) - (old.dias || 0)),
+            dias_vendidos: Math.max(0, (saldo.dias_vendidos || 0) - (old.dias_vendidos || 0)),
+          }).eq('id', old.ferias_saldo_id)
+        }
+        await recalcSaldo(old.ferias_saldo_id)
+      }
+
       toast.success('Ferias excluidas com sucesso')
       return true
     } catch (err) {
@@ -271,7 +378,7 @@ export function useFerias() {
       toast.error('Erro ao excluir ferias')
       return false
     }
-  }, [])
+  }, [recalcSaldo])
 
   const venderFerias = useCallback(async (periodoId: string, diasVender: number) => {
     try {
@@ -293,6 +400,10 @@ export function useFerias() {
         .eq('id', periodoId)
 
       if (error) throw error
+
+      // Recalculate dias_restantes and status
+      await recalcSaldo(periodoId)
+
       toast.success(`${diasVender} dias vendidos com sucesso`)
       return true
     } catch (err: unknown) {
@@ -301,7 +412,7 @@ export function useFerias() {
       toast.error(message)
       return false
     }
-  }, [])
+  }, [recalcSaldo])
 
   const updateSaldoDireito = useCallback(async (saldoId: string, diasDireito: number) => {
     try {
@@ -357,6 +468,51 @@ export function useFerias() {
         .single()
 
       if (error) throw error
+
+      // Deduct from affected employees' saldos
+      // Build employee filter based on unidade/setor
+      let empQuery = supabase.from('funcionarios').select('id').eq('status', 'Ativo')
+      if (payload.unidade_id) empQuery = empQuery.eq('unidade_id', payload.unidade_id)
+      if (payload.setor_id) empQuery = empQuery.eq('setor_id', payload.setor_id)
+      const { data: employees } = await empQuery
+
+      if (employees && employees.length > 0) {
+        for (const emp of employees) {
+          // Find the oldest available saldo for this employee
+          const { data: saldos } = await supabase
+            .from('ferias_saldo')
+            .select('id, dias_gozados, dias_restantes')
+            .eq('funcionario_id', emp.id)
+            .in('status', ['Disponível', 'Parcial'])
+            .gt('dias_restantes', 0)
+            .order('periodo_aquisitivo_inicio', { ascending: true })
+            .limit(1)
+
+          const saldo = saldos?.[0]
+          const saldoId = saldo?.id || null
+
+          // Create individual ferias record linked to the coletiva
+          await supabase.from('ferias').insert({
+            funcionario_id: emp.id,
+            ferias_saldo_id: saldoId,
+            data_inicio: payload.data_inicio,
+            data_fim: payload.data_fim,
+            dias: payload.dias,
+            tipo: 'Coletiva',
+            status: 'Programada',
+            observacao: `Ferias coletivas: ${payload.titulo}`,
+          })
+
+          // Update saldo if found
+          if (saldo) {
+            await supabase.from('ferias_saldo').update({
+              dias_gozados: (saldo.dias_gozados || 0) + payload.dias,
+            }).eq('id', saldo.id)
+            await recalcSaldo(saldo.id)
+          }
+        }
+      }
+
       toast.success('Ferias coletivas registradas com sucesso')
       return data
     } catch (err) {
@@ -364,10 +520,46 @@ export function useFerias() {
       toast.error('Erro ao registrar ferias coletivas')
       return null
     }
-  }, [])
+  }, [recalcSaldo])
 
   const deleteFeriasColetivas = useCallback(async (id: string) => {
     try {
+      // Load the coletiva to find related individual ferias records
+      const { data: coletiva } = await supabase
+        .from('ferias_coletivas')
+        .select('titulo')
+        .eq('id', id)
+        .single()
+
+      if (coletiva) {
+        // Find individual ferias records created for this coletiva
+        const { data: feriasRecs } = await supabase
+          .from('ferias')
+          .select('id, dias, dias_vendidos, ferias_saldo_id')
+          .eq('tipo', 'Coletiva')
+          .like('observacao', `%${coletiva.titulo}%`)
+
+        if (feriasRecs) {
+          for (const f of feriasRecs) {
+            if (f.ferias_saldo_id) {
+              const { data: saldo } = await supabase
+                .from('ferias_saldo')
+                .select('dias_gozados, dias_vendidos')
+                .eq('id', f.ferias_saldo_id)
+                .single()
+              if (saldo) {
+                await supabase.from('ferias_saldo').update({
+                  dias_gozados: Math.max(0, (saldo.dias_gozados || 0) - (f.dias || 0)),
+                  dias_vendidos: Math.max(0, (saldo.dias_vendidos || 0) - (f.dias_vendidos || 0)),
+                }).eq('id', f.ferias_saldo_id)
+                await recalcSaldo(f.ferias_saldo_id)
+              }
+            }
+            await supabase.from('ferias').delete().eq('id', f.id)
+          }
+        }
+      }
+
       const { error } = await supabase
         .from('ferias_coletivas')
         .delete()
@@ -381,7 +573,7 @@ export function useFerias() {
       toast.error('Erro ao excluir ferias coletivas')
       return false
     }
-  }, [])
+  }, [recalcSaldo])
 
   const loadExtrato = useCallback(async (funcionarioId: string) => {
     try {
