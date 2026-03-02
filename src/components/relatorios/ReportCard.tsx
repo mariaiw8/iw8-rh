@@ -13,7 +13,7 @@ export function ReportCard({ title, description, icon, onClick }: ReportCardProp
   return (
     <button
       onClick={onClick}
-      className="bg-white rounded-xl shadow-sm p-6 text-left hover:shadow-md hover:border-laranja border border-transparent transition-all duration-200 group"
+      className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 text-left hover:shadow-md hover:border-laranja transition-all duration-200 group"
     >
       <div className="flex items-start gap-4">
         <div className="w-12 h-12 rounded-lg bg-azul/10 flex items-center justify-center text-azul-medio group-hover:bg-laranja/10 group-hover:text-laranja transition-colors">

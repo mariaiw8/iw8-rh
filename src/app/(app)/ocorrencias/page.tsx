@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -14,8 +15,8 @@ import { CardSkeleton } from '@/components/ui/LoadingSkeleton'
 import { OcorrenciaForm, type OcorrenciaFormData } from '@/components/ocorrencias/OcorrenciaForm'
 import { TipoOcorrenciaForm, type TipoFormData } from '@/components/ocorrencias/TipoOcorrenciaForm'
 import { useOcorrencias, type Ocorrencia, type TipoOcorrencia } from '@/hooks/useOcorrencias'
-import { Plus, ClipboardList, Pencil, Trash2, FileText, ExternalLink } from 'lucide-react'
-import { format } from 'date-fns'
+import { Plus, ClipboardList, Pencil, Trash2, FileText, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
+import { formatDateSafe } from '@/lib/dateUtils'
 
 const CATEGORIAS = [
   { value: '', label: 'Todas' },
@@ -51,6 +52,8 @@ export default function OcorrenciasPage() {
   const [filterSearch, setFilterSearch] = useState('')
   const [filterDataInicio, setFilterDataInicio] = useState('')
   const [filterDataFim, setFilterDataFim] = useState('')
+  const [sections, setSections] = useState({ tipos: true, lista: true })
+  const toggleSection = (key: keyof typeof sections) => setSections(prev => ({ ...prev, [key]: !prev[key] }))
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -151,14 +154,14 @@ export default function OcorrenciasPage() {
       {/* Tipos de Ocorrencia */}
       {tipos.length > 0 && (
         <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>
-              <div className="flex items-center gap-2">
-                <FileText size={18} className="text-azul-medio" />
-                Tipos de Ocorrencia
-              </div>
-            </CardTitle>
-          </CardHeader>
+          <button type="button" onClick={() => toggleSection('tipos')} className="flex items-center justify-between w-full mb-2">
+            <div className="flex items-center gap-2">
+              <FileText size={18} className="text-azul-medio" />
+              <h3 className="text-lg font-bold text-cinza-preto">Tipos de Ocorrencia</h3>
+            </div>
+            {sections.tipos ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+          </button>
+          <div className={`overflow-hidden transition-all duration-200 ${sections.tipos ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
           <div className="flex flex-wrap gap-2">
             {tipos.map((t) => (
               <div
@@ -182,6 +185,7 @@ export default function OcorrenciasPage() {
                 </button>
               </div>
             ))}
+          </div>
           </div>
         </Card>
       )}
@@ -215,17 +219,17 @@ export default function OcorrenciasPage() {
 
       {/* Lista de Ocorrencias */}
       <Card>
-        <CardHeader>
-          <CardTitle>
-            <div className="flex items-center gap-2">
-              <ClipboardList size={18} className="text-laranja" />
-              Ocorrencias Recentes
-              {filteredOcorrencias.length > 0 && (
-                <Badge variant="neutral">{filteredOcorrencias.length}</Badge>
-              )}
-            </div>
-          </CardTitle>
-        </CardHeader>
+        <button type="button" onClick={() => toggleSection('lista')} className="flex items-center justify-between w-full mb-2">
+          <div className="flex items-center gap-2">
+            <ClipboardList size={18} className="text-laranja" />
+            <h3 className="text-lg font-bold text-cinza-preto">Ocorrencias Recentes</h3>
+            {filteredOcorrencias.length > 0 && (
+              <Badge variant="neutral">{filteredOcorrencias.length}</Badge>
+            )}
+          </div>
+          {sections.lista ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+        </button>
+        <div className={`overflow-hidden transition-all duration-200 ${sections.lista ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'}`}>
         {filteredOcorrencias.length === 0 ? (
           <EmptyState
             icon={<ClipboardList size={40} />}
@@ -249,11 +253,13 @@ export default function OcorrenciasPage() {
               {filteredOcorrencias.map((o) => (
                 <TableRow key={o.id}>
                   <TableCell>
-                    {format(new Date(o.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {formatDateSafe(o.data_inicio)}
                   </TableCell>
                   <TableCell>
                     <div>
-                      <p className="font-medium">{o.funcionario_nome}</p>
+                      <Link href={`/funcionarios/${o.funcionario_id}`} className="font-medium text-azul hover:text-laranja cursor-pointer hover:underline">
+                        {o.funcionario_nome}
+                      </Link>
                       {o.funcionario_codigo && (
                         <p className="text-xs text-cinza-estrutural">Cod: {o.funcionario_codigo}</p>
                       )}
@@ -302,6 +308,7 @@ export default function OcorrenciasPage() {
             </TableBody>
           </Table>
         )}
+        </div>
       </Card>
 
       {/* Modals */}

@@ -12,7 +12,7 @@ export function AbsenteismoCard({ valor }: AbsenteismoCardProps) {
   const iconCor = valor < 2 ? 'bg-green-100' : valor <= 4 ? 'bg-yellow-100' : 'bg-red-100'
 
   return (
-    <div className={`${bgCor} rounded-xl p-6`}>
+    <div className={`${bgCor} rounded-xl shadow-sm border border-gray-100 p-6`}>
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-medium text-cinza-estrutural">Absenteismo</p>
         <div className={`w-10 h-10 rounded-lg ${iconCor} flex items-center justify-center`}>

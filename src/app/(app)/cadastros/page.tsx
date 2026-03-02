@@ -597,7 +597,7 @@ function UnidadeModal({
       if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Unidade atualizada')
     } else {
-      const { error } = await supabase.from('unidades').insert(payload)
+      const { error } = await supabase.from('unidades').insert(payload).select()
       if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Unidade criada')
     }
@@ -764,16 +764,16 @@ function SetorModal({
         toast.success('Setor atualizado')
       }
     } else {
-      const { error } = await supabase.from('setores').insert(payload)
+      const { error } = await supabase.from('setores').insert(payload).select()
       if (error) {
         if (error.message.includes('responsavel_id')) {
           const { responsavel_id: _, ...payloadWithoutResp } = payload
-          const { error: retryError } = await supabase.from('setores').insert(payloadWithoutResp)
+          const { error: retryError } = await supabase.from('setores').insert(payloadWithoutResp).select()
           if (retryError) {
             if (retryError.message.includes('setores_tipo_check') || retryError.message.includes('horario_')) {
               const fallbackPayload: Record<string, unknown> = { titulo: data.titulo, unidade_id: data.unidade_id || null }
               if (!retryError.message.includes('setores_tipo_check') && payload.tipo) fallbackPayload.tipo = payload.tipo
-              const { error: retryError2 } = await supabase.from('setores').insert(fallbackPayload)
+              const { error: retryError2 } = await supabase.from('setores').insert(fallbackPayload).select()
               if (retryError2) { toast.error('Erro: ' + retryError2.message); return }
             } else {
               toast.error('Erro: ' + retryError.message); return
@@ -789,11 +789,11 @@ function SetorModal({
           if (!error.message.includes('setores_tipo_check') && payload.tipo) {
             fallbackPayload.tipo = payload.tipo
           }
-          const { error: retryError } = await supabase.from('setores').insert(fallbackPayload)
+          const { error: retryError } = await supabase.from('setores').insert(fallbackPayload).select()
           if (retryError) {
             if (retryError.message.includes('responsavel_id')) {
               const { responsavel_id: _, ...fb } = fallbackPayload
-              const { error: retryError2 } = await supabase.from('setores').insert(fb)
+              const { error: retryError2 } = await supabase.from('setores').insert(fb).select()
               if (retryError2) { toast.error('Erro: ' + retryError2.message); return }
             } else {
               toast.error('Erro: ' + retryError.message); return
@@ -922,7 +922,7 @@ function FuncaoModal({
       if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Funcao atualizada')
     } else {
-      const { error } = await supabase.from('funcoes').insert(payload)
+      const { error } = await supabase.from('funcoes').insert(payload).select()
       if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Funcao criada')
     }
@@ -1019,7 +1019,7 @@ function MotivoDesligamentoModal({
       if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Motivo atualizado')
     } else {
-      const { error } = await supabase.from('motivos_desligamento').insert(payload)
+      const { error } = await supabase.from('motivos_desligamento').insert(payload).select()
       if (error) { toast.error('Erro: ' + error.message); return }
       toast.success('Motivo criado')
     }

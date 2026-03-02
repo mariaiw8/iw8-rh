@@ -42,7 +42,7 @@ export function FolhaResumoCards({ resumo }: FolhaResumoCardsProps) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {cards.map((card) => (
-        <div key={card.title} className="bg-white rounded-xl shadow-sm p-6">
+        <div key={card.title} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-medium text-cinza-estrutural">{card.title}</p>
             <div className={card.color}>{card.icon}</div>

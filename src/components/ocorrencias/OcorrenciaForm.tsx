@@ -7,10 +7,12 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Autocomplete } from '@/components/ui/Autocomplete'
 import { createClient } from '@/lib/supabase'
+import { safeDate } from '@/lib/dateUtils'
 import { useOcorrencias, type TipoOcorrencia } from '@/hooks/useOcorrencias'
 import { type FeriasSaldo } from '@/hooks/useFerias'
 import { Upload } from 'lucide-react'
-import { differenceInCalendarDays, format } from 'date-fns'
+import { differenceInCalendarDays } from 'date-fns'
+import { formatDateSafe } from '@/lib/dateUtils'
 
 interface OcorrenciaFormProps {
   open: boolean
@@ -86,10 +88,9 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
 
   useEffect(() => {
     if (form.data_inicio && form.data_fim) {
-      const dias = differenceInCalendarDays(
-        new Date(form.data_fim + 'T00:00:00'),
-        new Date(form.data_inicio + 'T00:00:00')
-      ) + 1
+      const dataFim = safeDate(form.data_fim)
+      const dataInicio = safeDate(form.data_inicio)
+      const dias = dataFim && dataInicio ? differenceInCalendarDays(dataFim, dataInicio) + 1 : 1
       setForm((prev) => ({ ...prev, dias: dias > 0 ? dias : 1 }))
     }
   }, [form.data_inicio, form.data_fim])
@@ -258,7 +259,7 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
               onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value || null })}
               options={periodosDisponiveis.map((p) => ({
                 value: p.id,
-                label: `${format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')} (${p.dias_restantes} dias restantes)`,
+                label: `${formatDateSafe(p.periodo_aquisitivo_inicio)} a ${formatDateSafe(p.periodo_aquisitivo_fim)} (${p.dias_restantes} dias restantes)`,
               }))}
               placeholder="Selecione o periodo"
             />

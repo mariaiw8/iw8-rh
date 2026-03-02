@@ -10,7 +10,7 @@ export function Skeleton({ className = '' }: SkeletonProps) {
 
 export function CardSkeleton() {
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
       <Skeleton className="h-4 w-24 mb-3" />
       <Skeleton className="h-8 w-16 mb-2" />
       <Skeleton className="h-3 w-32" />
@@ -20,7 +20,7 @@ export function CardSkeleton() {
 
 export function TableSkeleton({ rows = 5 }: { rows?: number }) {
   return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
       <div className="bg-azul p-4">
         <Skeleton className="h-4 w-full bg-blue-400/30" />
       </div>

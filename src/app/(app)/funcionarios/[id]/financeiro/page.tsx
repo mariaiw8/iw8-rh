@@ -29,10 +29,13 @@ import {
   Trash2,
   FileText,
   BarChart3,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
+import { formatDateSafe, safeDate } from '@/lib/dateUtils'
 
 function formatCurrency(value: number | null | undefined): string {
   if (value == null) return 'R$ 0,00'
@@ -40,11 +43,7 @@ function formatCurrency(value: number | null | undefined): string {
 }
 
 function formatDate(dateStr: string): string {
-  try {
-    return format(new Date(dateStr + 'T00:00:00'), 'dd/MM/yyyy', { locale: ptBR })
-  } catch {
-    return dateStr
-  }
+  return formatDateSafe(dateStr)
 }
 
 export default function FinanceiroFuncionarioPage() {
@@ -89,6 +88,8 @@ export default function FinanceiroFuncionarioPage() {
   })
   const [filtroTipo, setFiltroTipo] = useState('')
   const [filtroNatureza, setFiltroNatureza] = useState('Todos')
+  const [sections, setSections] = useState({ historico: true, transacoes: true })
+  const toggleSection = (key: keyof typeof sections) => setSections(prev => ({ ...prev, [key]: !prev[key] }))
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -244,7 +245,7 @@ export default function FinanceiroFuncionarioPage() {
 
       {/* Cards superiores */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-medium text-cinza-estrutural">Salario Bruto Atual</p>
             <DollarSign size={20} className="text-laranja" />
@@ -253,7 +254,7 @@ export default function FinanceiroFuncionarioPage() {
             {salarioAtual ? formatCurrency(salarioAtual.salario_bruto) : 'N/A'}
           </p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-medium text-cinza-estrutural">Salario Liquido Atual</p>
             <Wallet size={20} className="text-azul" />
@@ -262,7 +263,7 @@ export default function FinanceiroFuncionarioPage() {
             {salarioAtual ? formatCurrency(salarioAtual.salario_liquido) : 'N/A'}
           </p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-medium text-cinza-estrutural">Custo Total</p>
             <TrendingUp size={20} className="text-amber-500" />
@@ -271,7 +272,7 @@ export default function FinanceiroFuncionarioPage() {
             {salarioAtual ? formatCurrency(salarioAtual.custo_funcionario) : 'N/A'}
           </p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-medium text-cinza-estrutural">Vigencia desde</p>
             <Calendar size={20} className="text-green-500" />
@@ -285,12 +286,16 @@ export default function FinanceiroFuncionarioPage() {
       {/* Historico Salarial */}
       <Card className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-cinza-preto">Historico Salarial</h3>
+          <button type="button" onClick={() => toggleSection('historico')} className="flex items-center gap-2">
+            {sections.historico ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+            <h3 className="text-lg font-bold text-cinza-preto">Historico Salarial</h3>
+          </button>
           <Button size="sm" onClick={() => { setSalarioEditing(null); setSalarioFormOpen(true) }}>
             <Plus size={16} /> Registrar Novo Salario
           </Button>
         </div>
 
+        <div className={`overflow-hidden transition-all duration-200 ${sections.historico ? 'max-h-[3000px] opacity-100' : 'max-h-0 opacity-0'}`}>
         {salarios.length === 0 ? (
           <EmptyState
             icon={<DollarSign size={48} />}
@@ -338,6 +343,7 @@ export default function FinanceiroFuncionarioPage() {
             </TableBody>
           </Table>
         )}
+        </div>
       </Card>
 
       {/* Grafico Evolucao Salarial */}
@@ -350,7 +356,10 @@ export default function FinanceiroFuncionarioPage() {
       {/* Transacoes */}
       <Card className="mb-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-          <h3 className="text-lg font-bold text-cinza-preto">Transacoes</h3>
+          <button type="button" onClick={() => toggleSection('transacoes')} className="flex items-center gap-2">
+            {sections.transacoes ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+            <h3 className="text-lg font-bold text-cinza-preto">Transacoes</h3>
+          </button>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => setTipoFormOpen(true)}>
               <Plus size={14} /> Tipo
@@ -361,6 +370,7 @@ export default function FinanceiroFuncionarioPage() {
           </div>
         </div>
 
+        <div className={`overflow-hidden transition-all duration-200 ${sections.transacoes ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'}`}>
         {/* Filters */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <div>
@@ -442,6 +452,7 @@ export default function FinanceiroFuncionarioPage() {
             </TableBody>
           </Table>
         )}
+        </div>
       </Card>
 
       {/* Resumo Mensal */}

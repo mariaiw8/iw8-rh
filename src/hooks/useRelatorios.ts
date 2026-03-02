@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
+import { safeDate } from '@/lib/dateUtils'
 
 export interface RelatorioFuncionario {
   nome: string
@@ -108,13 +109,15 @@ export function useRelatorios() {
       return (funcRes.data || []).map((f) => {
         let tempoEmpresa = '-'
         if (f.data_admissao) {
-          const admissao = new Date(f.data_admissao + 'T00:00:00')
+          const admissao = safeDate(f.data_admissao)
+          if (!admissao) return { funcionario_id: f.id, nome: f.nome_completo || '', codigo: f.codigo || '', cpf: f.cpf || '', unidade: uniMap.get(f.unidade_id) || '-', setor: setMap.get(f.setor_id) || '-', funcao: funcaoMap.get(f.funcao_id) || '-', data_admissao: f.data_admissao || '', tempo_empresa: '-' }
           const dias = Math.floor((hoje.getTime() - admissao.getTime()) / (1000 * 60 * 60 * 24))
           const anos = Math.floor(dias / 365)
           const meses = Math.floor((dias % 365) / 30)
           tempoEmpresa = anos > 0 ? `${anos}a ${meses}m` : `${meses}m`
         }
         return {
+          funcionario_id: f.id,
           nome: f.nome_completo || '',
           codigo: f.codigo || '',
           cpf: f.cpf || '',
@@ -147,7 +150,8 @@ export function useRelatorios() {
       const { data } = await query
 
       let results = (data || []).map((f: Record<string, unknown>) => ({
-        nome: (f.nome || f.funcionario_nome || '') as string,
+        funcionario_id: (f.funcionario_id || '') as string,
+        nome: (f.nome_completo || f.nome || f.funcionario_nome || '') as string,
         codigo: (f.codigo || '') as string,
         periodo_aquisitivo: (f.periodo_aquisitivo || f.periodo || '') as string,
         dias_restantes: (f.dias_restantes || 0) as number,
@@ -199,6 +203,7 @@ export function useRelatorios() {
       let results = (feriasRes.data || []).map((f) => {
         const func = funcMap.get(f.funcionario_id) || {}
         return {
+          funcionario_id: f.funcionario_id,
           nome: (func as Record<string, string>).nome_completo || '',
           unidade: uniMap.get((func as Record<string, string>).unidade_id) || '-',
           setor: setMap.get((func as Record<string, string>).setor_id) || '-',
@@ -252,6 +257,7 @@ export function useRelatorios() {
       let results = (ocRes.data || []).map((o) => {
         const tipo = tipoMap.get(o.tipo_ocorrencia_id) || { titulo: '-', categoria: '-' }
         return {
+          funcionario_id: o.funcionario_id,
           data: o.data_inicio || '',
           funcionario: funcMap.get(o.funcionario_id) || '-',
           tipo: tipo.titulo,
@@ -299,6 +305,7 @@ export function useRelatorios() {
       let results = (salRes.data || []).map((s) => {
         const func = funcMap.get(s.funcionario_id) || {}
         return {
+          funcionario_id: s.funcionario_id,
           nome: (func as Record<string, string>).nome_completo || '-',
           funcao: funcaoMap.get((func as Record<string, string>).funcao_id) || '-',
           setor: setorMap.get((func as Record<string, string>).setor_id) || '-',
@@ -348,9 +355,10 @@ export function useRelatorios() {
           return m === mes
         })
         .map((f) => {
-          const nascimento = new Date(f.data_nascimento + 'T00:00:00')
-          const idade = Math.floor((hoje.getTime() - nascimento.getTime()) / (1000 * 60 * 60 * 24 * 365.25))
+          const nascimento = safeDate(f.data_nascimento)
+          const idade = nascimento ? Math.floor((hoje.getTime() - nascimento.getTime()) / (1000 * 60 * 60 * 24 * 365.25)) : 0
           return {
+            funcionario_id: f.id,
             nome: f.nome_completo || '',
             data_nascimento: f.data_nascimento || '',
             idade,

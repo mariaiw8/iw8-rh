@@ -23,7 +23,7 @@ export function TurnoverCard({ valor, historico }: TurnoverCardProps) {
   }).join(' ')
 
   return (
-    <div className={`${bgCor} rounded-xl p-6`}>
+    <div className={`${bgCor} rounded-xl shadow-sm border border-gray-100 p-6`}>
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-medium text-cinza-estrutural">Rotatividade (Turnover)</p>
         <div className={`w-10 h-10 rounded-lg ${iconCor} flex items-center justify-center`}>

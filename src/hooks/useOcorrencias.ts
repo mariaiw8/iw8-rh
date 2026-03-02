@@ -219,14 +219,16 @@ export function useOcorrencias() {
       const { data: tipoOc } = await supabase.from('tipos_ocorrencia').select('titulo').eq('id', ocorrencia.tipo_ocorrencia_id).single()
       const tipoTitulo = tipoOc?.titulo || ''
 
-      await supabase.from('transacoes').update({
+      const { error: updateError } = await supabase.from('transacoes').update({
         valor: valor,
         data: ocorrencia.data_inicio,
         descricao: `Ocorrencia: ${tipoTitulo} — ${ocorrencia.descricao || ''}`,
       }).eq('id', transExistente.id)
+      if (updateError) console.error('Erro ao atualizar transacao:', updateError)
     } else if (transExistente && valor <= 0) {
       // Delete transaction if valor is now 0
-      await supabase.from('transacoes').delete().eq('id', transExistente.id)
+      const { error: deleteError } = await supabase.from('transacoes').delete().eq('id', transExistente.id)
+      if (deleteError) console.error('Erro ao excluir transacao:', deleteError)
     } else if (!transExistente && valor > 0) {
       // Create new transaction
       const { data: tipoTransacao } = await supabase
@@ -239,7 +241,7 @@ export function useOcorrencias() {
         const { data: tipoOc } = await supabase.from('tipos_ocorrencia').select('titulo').eq('id', ocorrencia.tipo_ocorrencia_id).single()
         const tipoTitulo = tipoOc?.titulo || ''
 
-        await supabase.from('transacoes').insert({
+        const { error: insertError } = await supabase.from('transacoes').insert({
           funcionario_id: ocorrencia.funcionario_id,
           tipo_transacao_id: tipoTransacao.id,
           valor: valor,
@@ -247,7 +249,8 @@ export function useOcorrencias() {
           descricao: `Ocorrencia: ${tipoTitulo} — ${ocorrencia.descricao || ''}`,
           origem_tabela: 'ocorrencias',
           origem_id: ocorrencia.id,
-        })
+        }).select()
+        if (insertError) console.error('Erro ao criar transacao:', insertError)
       }
     }
   }
@@ -333,7 +336,8 @@ export function useOcorrencias() {
   const deleteOcorrencia = useCallback(async (id: string) => {
     try {
       // Delete linked transaction first
-      await supabase.from('transacoes').delete().eq('origem_tabela', 'ocorrencias').eq('origem_id', id)
+      const { error: transError } = await supabase.from('transacoes').delete().eq('origem_tabela', 'ocorrencias').eq('origem_id', id)
+      if (transError) console.error('Erro ao excluir transacao vinculada:', transError)
 
       const { error } = await supabase
         .from('ocorrencias')

@@ -8,7 +8,7 @@ interface TempoEmpresaCardProps {
 
 export function TempoEmpresaCard({ tempo }: TempoEmpresaCardProps) {
   return (
-    <div className="bg-blue-50 rounded-xl p-6">
+    <div className="bg-blue-50 rounded-xl shadow-sm border border-gray-100 p-6">
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-medium text-cinza-estrutural">Tempo Medio de Empresa</p>
         <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">

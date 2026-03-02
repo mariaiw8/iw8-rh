@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -19,6 +20,8 @@ import {
   Layers,
   Trophy,
   BarChart3,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 
@@ -36,6 +39,8 @@ export default function FinanceiroGeralPage() {
   const [porSetor, setPorSetor] = useState<FolhaPorSetor[]>([])
   const [topSalarios, setTopSalarios] = useState<TopSalario[]>([])
   const [tipoFormOpen, setTipoFormOpen] = useState(false)
+  const [sections, setSections] = useState({ unidade: true, setor: true, top: true })
+  const toggleSection = (key: keyof typeof sections) => setSections(prev => ({ ...prev, [key]: !prev[key] }))
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -106,11 +111,15 @@ export default function FinanceiroGeralPage() {
 
       {/* Folha por Unidade */}
       <Card className="mb-8">
-        <div className="flex items-center gap-2 mb-4">
-          <Building2 size={20} className="text-azul" />
-          <h3 className="text-lg font-bold text-cinza-preto">Folha por Unidade</h3>
-        </div>
+        <button type="button" onClick={() => toggleSection('unidade')} className="flex items-center justify-between w-full mb-4">
+          <div className="flex items-center gap-2">
+            <Building2 size={20} className="text-azul" />
+            <h3 className="text-lg font-bold text-cinza-preto">Folha por Unidade</h3>
+          </div>
+          {sections.unidade ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+        </button>
 
+        <div className={`overflow-hidden transition-all duration-200 ${sections.unidade ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
         {porUnidade.length === 0 ? (
           <EmptyState
             icon={<Building2 size={48} />}
@@ -141,15 +150,20 @@ export default function FinanceiroGeralPage() {
             </TableBody>
           </Table>
         )}
+        </div>
       </Card>
 
       {/* Folha por Setor */}
       <Card className="mb-8">
-        <div className="flex items-center gap-2 mb-4">
-          <Layers size={20} className="text-azul" />
-          <h3 className="text-lg font-bold text-cinza-preto">Folha por Setor</h3>
-        </div>
+        <button type="button" onClick={() => toggleSection('setor')} className="flex items-center justify-between w-full mb-4">
+          <div className="flex items-center gap-2">
+            <Layers size={20} className="text-azul" />
+            <h3 className="text-lg font-bold text-cinza-preto">Folha por Setor</h3>
+          </div>
+          {sections.setor ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+        </button>
 
+        <div className={`overflow-hidden transition-all duration-200 ${sections.setor ? 'max-h-[3000px] opacity-100' : 'max-h-0 opacity-0'}`}>
         {porSetor.length === 0 ? (
           <EmptyState
             icon={<Layers size={48} />}
@@ -210,15 +224,20 @@ export default function FinanceiroGeralPage() {
             )}
           </>
         )}
+        </div>
       </Card>
 
       {/* Top Salarios */}
       <Card>
-        <div className="flex items-center gap-2 mb-4">
-          <Trophy size={20} className="text-amber-500" />
-          <h3 className="text-lg font-bold text-cinza-preto">Top 10 Salarios</h3>
-        </div>
+        <button type="button" onClick={() => toggleSection('top')} className="flex items-center justify-between w-full mb-4">
+          <div className="flex items-center gap-2">
+            <Trophy size={20} className="text-amber-500" />
+            <h3 className="text-lg font-bold text-cinza-preto">Top 10 Salarios</h3>
+          </div>
+          {sections.top ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+        </button>
 
+        <div className={`overflow-hidden transition-all duration-200 ${sections.top ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
         {topSalarios.length === 0 ? (
           <EmptyState
             icon={<DollarSign size={48} />}
@@ -247,7 +266,11 @@ export default function FinanceiroGeralPage() {
                       {i + 1}
                     </span>
                   </TableCell>
-                  <TableCell className="font-medium">{t.nome_completo}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link href={`/funcionarios/${t.funcionario_id}`} className="text-azul hover:text-laranja cursor-pointer hover:underline">
+                      {t.nome_completo}
+                    </Link>
+                  </TableCell>
                   <TableCell>{t.funcao_titulo || '-'}</TableCell>
                   <TableCell>{t.setor_titulo || '-'}</TableCell>
                   <TableCell className="font-bold text-laranja">{formatCurrency(t.salario_bruto)}</TableCell>
@@ -256,6 +279,7 @@ export default function FinanceiroGeralPage() {
             </TableBody>
           </Table>
         )}
+        </div>
       </Card>
 
       {/* Modal */}

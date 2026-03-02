@@ -10,7 +10,7 @@ export function CustoMedioCard({ valor }: CustoMedioCardProps) {
   const formatted = valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
   return (
-    <div className="bg-orange-50 rounded-xl p-6">
+    <div className="bg-orange-50 rounded-xl shadow-sm border border-gray-100 p-6">
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-medium text-cinza-estrutural">Custo Medio por Funcionario</p>
         <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">

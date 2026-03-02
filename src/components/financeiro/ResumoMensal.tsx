@@ -24,7 +24,7 @@ export function ResumoMensal({ transacoes, mesLabel }: ResumoMensalProps) {
   const isPositivo = saldo >= 0
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
       <h3 className="text-lg font-bold text-cinza-preto mb-1">Resumo Mensal</h3>
       <p className="text-xs text-cinza-estrutural mb-4">{mesLabel}</p>
 

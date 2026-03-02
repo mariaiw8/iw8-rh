@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -672,7 +673,13 @@ export default function RelatoriosPage() {
                     {absenteismoDetalhe.map((d, i) => (
                       <TableRow key={d.funcionario_id || i}>
                         <TableCell className="font-medium text-cinza-estrutural">{i + 1}</TableCell>
-                        <TableCell className="font-medium">{d.nome}</TableCell>
+                        <TableCell className="font-medium">
+                          {d.funcionario_id ? (
+                            <Link href={`/funcionarios/${d.funcionario_id}`} className="text-azul hover:text-laranja cursor-pointer hover:underline">
+                              {d.nome}
+                            </Link>
+                          ) : d.nome}
+                        </TableCell>
                         <TableCell>{d.setor || '-'}</TableCell>
                         <TableCell>{d.unidade || '-'}</TableCell>
                         <TableCell>
@@ -850,7 +857,11 @@ export default function RelatoriosPage() {
                   <TableRow key={i}>
                     {columns.map((col) => (
                       <TableCell key={col.key}>
-                        {col.format
+                        {(col.key === 'nome' || col.key === 'funcionario') && row.funcionario_id ? (
+                          <Link href={`/funcionarios/${row.funcionario_id}`} className="text-azul hover:text-laranja cursor-pointer hover:underline font-medium">
+                            {col.format ? col.format(row[col.key]) : String(row[col.key] ?? '-')}
+                          </Link>
+                        ) : col.format
                           ? col.format(row[col.key])
                           : String(row[col.key] ?? '-')}
                       </TableCell>

@@ -2,8 +2,7 @@
 
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
 import { type Salario } from '@/hooks/useFinanceiro'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import { formatDateSafe } from '@/lib/dateUtils'
 
 interface SalarioChartProps {
   salarios: Salario[]
@@ -20,13 +19,13 @@ export function SalarioChart({ salarios }: SalarioChartProps) {
   const chartData = [...salarios]
     .sort((a, b) => a.data_vigencia.localeCompare(b.data_vigencia))
     .map((s) => ({
-      data: format(new Date(s.data_vigencia + 'T00:00:00'), 'MMM/yyyy', { locale: ptBR }),
+      data: formatDateSafe(s.data_vigencia, 'MMM/yyyy'),
       'Salario Bruto': s.salario_bruto,
       'Salario Liquido': s.salario_liquido || 0,
     }))
 
   return (
-    <div className="bg-white rounded-xl shadow-sm p-6">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
       <h3 className="text-lg font-bold text-cinza-preto mb-4">Evolucao Salarial</h3>
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>

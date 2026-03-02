@@ -13,7 +13,7 @@ import { FileUpload } from '@/components/ui/FileUpload'
 import { Skeleton } from '@/components/ui/LoadingSkeleton'
 import { Modal } from '@/components/ui/Modal'
 import { createClient } from '@/lib/supabase'
-import { ArrowLeft, Pencil, Save, X, Plus, Trash2, Clock, Building2, Calendar, DollarSign, ClipboardList, ExternalLink, FileText, TrendingUp, TrendingDown, Ban } from 'lucide-react'
+import { ArrowLeft, Pencil, Save, X, Plus, Trash2, Clock, Building2, Calendar, DollarSign, ClipboardList, ExternalLink, FileText, TrendingUp, TrendingDown, Ban, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -127,6 +127,8 @@ export default function FuncionarioDetailPage() {
 
   // Track newly added familiar indices for animation
   const [recentlyAdded, setRecentlyAdded] = useState<Set<number>>(new Set())
+  // Collapsible sections
+  const [fichaExpand, setFichaExpand] = useState({ pessoais: true, vestuario: true, contato: true, vinculo: true, horario: true, familia: true })
 
   // Lookup data
   const [unidades, setUnidades] = useState<{ id: string; titulo: string }[]>([])
@@ -335,7 +337,8 @@ export default function FuncionarioDetailPage() {
       // Salvar familiares na tabela "familia"
       if (familiares !== undefined) {
         // Remover todos os familiares existentes e reinserir
-        await supabase.from('familia').delete().eq('funcionario_id', id)
+        const { error: delFamError } = await supabase.from('familia').delete().eq('funcionario_id', id)
+        if (delFamError) console.error('Erro ao limpar familiares:', delFamError)
         if (familiares.length > 0) {
           const { error: famError } = await supabase.from('familia').insert(
             familiares.map((fm) => ({
@@ -344,7 +347,7 @@ export default function FuncionarioDetailPage() {
               parentesco: fm.parentesco,
               data_nascimento: fm.data_nascimento || null,
             }))
-          )
+          ).select()
           if (famError) {
             toast.error('Erro ao salvar familiares: ' + famError.message)
             return
@@ -383,9 +386,10 @@ export default function FuncionarioDetailPage() {
 
   function getTempoEmpresa() {
     if (!funcionario?.data_admissao) return null
-    const admissao = new Date((funcionario.data_admissao as string) + 'T00:00:00')
+    const admissao = safeDate(funcionario.data_admissao as string)
+    if (!admissao) return null
     const ref = funcionario.data_desligamento
-      ? new Date((funcionario.data_desligamento as string) + 'T00:00:00')
+      ? safeDate(funcionario.data_desligamento as string) || new Date()
       : new Date()
     const anos = differenceInYears(ref, admissao)
     const meses = differenceInMonths(ref, admissao) % 12
@@ -592,7 +596,11 @@ export default function FuncionarioDetailPage() {
           <div className="space-y-6">
             {/* Informacoes Pessoais */}
             <Card>
-              <h3 className="text-lg font-bold text-cinza-preto mb-4">Informacoes Pessoais</h3>
+              <button type="button" onClick={() => setFichaExpand(p => ({ ...p, pessoais: !p.pessoais }))} className="flex items-center justify-between w-full mb-4">
+                <h3 className="text-lg font-bold text-cinza-preto">Informacoes Pessoais</h3>
+                {fichaExpand.pessoais ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+              </button>
+              <div className={`overflow-hidden transition-all duration-200 ${fichaExpand.pessoais ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Input label="Nome Completo *" {...register('nome')} error={errors.nome?.message} disabled={!editing} />
                 <Input label="Apelido" {...register('apelido')} disabled={!editing} placeholder="Ex: Joaozinho" />
@@ -610,21 +618,31 @@ export default function FuncionarioDetailPage() {
                   disabled={!editing}
                 />
               </div>
+              </div>
             </Card>
 
             {/* Vestuario/EPI */}
             <Card>
-              <h3 className="text-lg font-bold text-cinza-preto mb-4">Vestuario / EPI</h3>
+              <button type="button" onClick={() => setFichaExpand(p => ({ ...p, vestuario: !p.vestuario }))} className="flex items-center justify-between w-full mb-4">
+                <h3 className="text-lg font-bold text-cinza-preto">Vestuario / EPI</h3>
+                {fichaExpand.vestuario ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+              </button>
+              <div className={`overflow-hidden transition-all duration-200 ${fichaExpand.vestuario ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Input label="Tamanho Camiseta" {...register('tamanho_camiseta')} disabled={!editing} />
                 <Input label="Tamanho Calca" {...register('tamanho_calca')} disabled={!editing} />
                 <Input label="Numero do Sapato" {...register('numero_sapato')} disabled={!editing} />
               </div>
+              </div>
             </Card>
 
             {/* Contato */}
             <Card>
-              <h3 className="text-lg font-bold text-cinza-preto mb-4">Contato</h3>
+              <button type="button" onClick={() => setFichaExpand(p => ({ ...p, contato: !p.contato }))} className="flex items-center justify-between w-full mb-4">
+                <h3 className="text-lg font-bold text-cinza-preto">Contato</h3>
+                {fichaExpand.contato ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+              </button>
+              <div className={`overflow-hidden transition-all duration-200 ${fichaExpand.contato ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="sm:col-span-2 lg:col-span-3">
                   <Input label="Endereco" {...register('endereco')} disabled={!editing} />
@@ -660,11 +678,16 @@ export default function FuncionarioDetailPage() {
                   </div>
                 ))}
               </div>
+            </div>
             </Card>
 
             {/* Vinculo Profissional */}
             <Card>
-              <h3 className="text-lg font-bold text-cinza-preto mb-4">Vinculo Profissional</h3>
+              <button type="button" onClick={() => setFichaExpand(p => ({ ...p, vinculo: !p.vinculo }))} className="flex items-center justify-between w-full mb-4">
+                <h3 className="text-lg font-bold text-cinza-preto">Vinculo Profissional</h3>
+                {fichaExpand.vinculo ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+              </button>
+              <div className={`overflow-hidden transition-all duration-200 ${fichaExpand.vinculo ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <Select
                   label="Unidade"
@@ -711,12 +734,14 @@ export default function FuncionarioDetailPage() {
                   )}
                 </div>
               )}
+            </div>
             </Card>
 
             {/* Horario de Expediente */}
             <Card>
               <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setFichaExpand(p => ({ ...p, horario: !p.horario }))} className="flex items-center gap-3">
+                  {fichaExpand.horario ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
                   <h3 className="text-lg font-bold text-cinza-preto">Horario de Expediente</h3>
                   {(() => {
                     const wh = getWeeklyHours()
@@ -728,7 +753,7 @@ export default function FuncionarioDetailPage() {
                       </Badge>
                     )
                   })()}
-                </div>
+                </button>
                 {editing && setorId && (
                   <Button type="button" variant="ghost" size="sm" onClick={applySetorSchedule}>
                     <Building2 size={14} />
@@ -736,6 +761,7 @@ export default function FuncionarioDetailPage() {
                   </Button>
                 )}
               </div>
+              <div className={`overflow-hidden transition-all duration-200 ${fichaExpand.horario ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
                   <h4 className="text-sm font-semibold text-cinza-estrutural mb-3">Segunda a Quinta</h4>
@@ -756,18 +782,23 @@ export default function FuncionarioDetailPage() {
                   </div>
                 </div>
               </div>
+              </div>
             </Card>
 
             {/* Familia / Dependentes */}
             <Card>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-cinza-preto">Familia / Dependentes</h3>
+                <button type="button" onClick={() => setFichaExpand(p => ({ ...p, familia: !p.familia }))} className="flex items-center gap-2">
+                  {fichaExpand.familia ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+                  <h3 className="text-lg font-bold text-cinza-preto">Familia / Dependentes</h3>
+                </button>
                 {editing && (
                   <Button type="button" variant="ghost" size="sm" onClick={handleAddFamiliar}>
                     <Plus size={14} /> Adicionar Familiar
                   </Button>
                 )}
               </div>
+              <div className={`overflow-hidden transition-all duration-200 ${fichaExpand.familia ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'}`}>
               <div className="space-y-3">
                 {familiaFields.length === 0 ? (
                   <p className="text-sm text-cinza-estrutural">Nenhum familiar cadastrado</p>
@@ -816,6 +847,7 @@ export default function FuncionarioDetailPage() {
                     </div>
                   ))
                 )}
+              </div>
               </div>
             </Card>
           </div>
@@ -966,7 +998,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
       if (tipoVenda && feriasRec) {
         const inicio = saldoData?.periodo_aquisitivo_inicio || ''
         const fim = saldoData?.periodo_aquisitivo_fim || ''
-        await supabase.from('transacoes').insert({
+        const { error: transError } = await supabase.from('transacoes').insert({
           funcionario_id: funcionarioId,
           tipo_transacao_id: tipoVenda.id,
           valor: valor,
@@ -974,7 +1006,8 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
           descricao: `Venda de ${dias} dias de ferias — Periodo ${inicio} a ${fim}`,
           origem_tabela: 'ferias',
           origem_id: feriasRec.id,
-        })
+        }).select()
+        if (transError) console.error('Erro ao registrar transacao:', transError)
       }
     }
     if (ok) loadData()

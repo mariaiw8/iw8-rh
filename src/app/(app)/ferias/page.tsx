@@ -222,7 +222,7 @@ export default function FeriasPage() {
       if (tipoVenda && feriasRec) {
         const inicio = saldoData?.periodo_aquisitivo_inicio || ''
         const fim = saldoData?.periodo_aquisitivo_fim || ''
-        await supabase.from('transacoes').insert({
+        const { error: transError } = await supabase.from('transacoes').insert({
           funcionario_id: selectedFuncionarioId,
           tipo_transacao_id: tipoVenda.id,
           valor: valor,
@@ -230,7 +230,8 @@ export default function FeriasPage() {
           descricao: `Venda de ${dias} dias de ferias — Periodo ${inicio} a ${fim}`,
           origem_tabela: 'ferias',
           origem_id: feriasRec.id,
-        })
+        }).select()
+        if (transError) console.error('Erro ao registrar transacao:', transError)
       }
     }
     if (ok && selectedFuncionarioId) {

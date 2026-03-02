@@ -111,7 +111,7 @@ export default function FuncionariosPage() {
       } else {
         funcData = (viewRes.data || []).map((f: Record<string, unknown>) => ({
           id: f.id as string,
-          nome: f.nome as string,
+          nome: (f.nome_completo || f.nome) as string,
           apelido: (f.apelido as string) || undefined,
           codigo: (f.codigo as string) || '',
           cpf: f.cpf as string,
@@ -263,7 +263,7 @@ export default function FuncionariosPage() {
                           <Avatar src={f.foto_url} name={f.nome} size="sm" />
                         </TableCell>
                         <TableCell className="font-medium">
-                          {f.nome}
+                          <span className="text-azul hover:text-laranja cursor-pointer hover:underline">{f.nome}</span>
                           {f.apelido && <span className="text-cinza-estrutural font-normal ml-1">({f.apelido})</span>}
                         </TableCell>
                         <TableCell>{f.codigo || '-'}</TableCell>
