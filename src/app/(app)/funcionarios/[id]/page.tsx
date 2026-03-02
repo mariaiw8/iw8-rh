@@ -88,7 +88,7 @@ const funcionarioSchema = z.object({
   funcao_id: z.string().optional(),
   data_admissao: z.string().optional(),
   data_desligamento: z.string().optional(),
-  motivo_desligamento: z.string().optional(),
+  motivo_desligamento_id: z.string().optional(),
   // Horario
   seg_qui_entrada: z.string().optional(),
   seg_qui_almoco_inicio: z.string().optional(),
@@ -232,7 +232,7 @@ export default function FuncionarioDetailPage() {
         funcao_id: f.funcao_id || '',
         data_admissao: f.data_admissao || '',
         data_desligamento: f.data_desligamento || '',
-        motivo_desligamento: f.motivo_desligamento || '',
+        motivo_desligamento_id: f.motivo_desligamento_id || '',
         seg_qui_entrada: f.horario_seg_qui_entrada || f.seg_qui_entrada || '',
         seg_qui_almoco_inicio: f.horario_seg_qui_almoco_inicio || f.seg_qui_almoco_inicio || '',
         seg_qui_almoco_fim: f.horario_seg_qui_almoco_fim || f.seg_qui_almoco_fim || '',
@@ -315,7 +315,7 @@ export default function FuncionarioDetailPage() {
         funcao_id: restData.funcao_id || null,
         data_admissao: restData.data_admissao || null,
         data_desligamento: restData.data_desligamento || null,
-        motivo_desligamento: restData.data_desligamento ? restData.motivo_desligamento : null,
+        motivo_desligamento_id: restData.data_desligamento ? (restData.motivo_desligamento_id || null) : null,
         horario_seg_qui_entrada: restData.seg_qui_entrada || null,
         horario_seg_qui_almoco_inicio: restData.seg_qui_almoco_inicio || null,
         horario_seg_qui_almoco_fim: restData.seg_qui_almoco_fim || null,
@@ -698,17 +698,13 @@ export default function FuncionarioDetailPage() {
               </div>
               {dataDesligamento && (
                 <div className="mt-4">
-                  {motivosDesligamento.length > 0 ? (
-                    <Select
-                      label="Motivo do Desligamento"
-                      {...register('motivo_desligamento')}
-                      options={motivosDesligamento.map((m) => ({ value: m.titulo, label: m.titulo }))}
-                      placeholder="Selecione o motivo"
-                      disabled={!editing}
-                    />
-                  ) : (
-                    <Input label="Motivo do Desligamento" {...register('motivo_desligamento')} disabled={!editing} />
-                  )}
+                  <Select
+                    label="Motivo do Desligamento"
+                    {...register('motivo_desligamento_id')}
+                    options={motivosDesligamento.map((m) => ({ value: m.id, label: m.titulo }))}
+                    placeholder="Selecione o motivo"
+                    disabled={!editing}
+                  />
                 </div>
               )}
             </Card>

@@ -8,6 +8,11 @@ export interface Salario {
   id: string
   funcionario_id: string
   salario_bruto: number
+  adicional_insalubridade?: number | null
+  percentual_insalubridade?: number | null
+  adicional_pagamento?: number | null
+  vale_alimentacao?: number | null
+  desconto_sindicato?: number | null
   salario_liquido?: number | null
   custo_funcionario?: number | null
   data_vigencia: string
@@ -98,6 +103,11 @@ export function useFinanceiro() {
   const createSalario = useCallback(async (payload: {
     funcionario_id: string
     salario_bruto: number
+    adicional_insalubridade?: number | null
+    percentual_insalubridade?: number | null
+    adicional_pagamento?: number | null
+    vale_alimentacao?: number | null
+    desconto_sindicato?: number | null
     salario_liquido?: number | null
     custo_funcionario?: number | null
     data_vigencia: string

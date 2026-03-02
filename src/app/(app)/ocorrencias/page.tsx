@@ -15,7 +15,7 @@ import { OcorrenciaForm, type OcorrenciaFormData } from '@/components/ocorrencia
 import { TipoOcorrenciaForm, type TipoFormData } from '@/components/ocorrencias/TipoOcorrenciaForm'
 import { useOcorrencias, type Ocorrencia, type TipoOcorrencia } from '@/hooks/useOcorrencias'
 import { Plus, ClipboardList, Pencil, Trash2, FileText, ExternalLink } from 'lucide-react'
-import { format } from 'date-fns'
+import { formatDateSafe } from '@/lib/dateUtils'
 
 const CATEGORIAS = [
   { value: '', label: 'Todas' },
@@ -106,6 +106,7 @@ export default function OcorrenciasPage() {
       data_inicio: data.data_inicio,
       data_fim: data.data_fim || undefined,
       dias: data.dias,
+      horas: data.horas || undefined,
       valor: data.valor || undefined,
       arquivo_url: data.arquivo_url || undefined,
       observacao: data.observacao || undefined,
@@ -249,7 +250,7 @@ export default function OcorrenciasPage() {
               {filteredOcorrencias.map((o) => (
                 <TableRow key={o.id}>
                   <TableCell>
-                    {format(new Date(o.data_inicio + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {formatDateSafe(o.data_inicio)}
                   </TableCell>
                   <TableCell>
                     <div>

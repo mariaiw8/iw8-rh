@@ -9,6 +9,14 @@ export interface TipoOcorrencia {
   titulo: string
   categoria: string
   cor: string
+  ativo?: boolean
+  gera_financeiro?: boolean
+  natureza_financeira?: 'Crédito' | 'Débito' | null
+  afeta_assiduidade?: boolean
+  tipo_falta?: 'Justificada' | 'Injustificada' | null
+  base_calculo?: 'manual' | 'dia_trabalho' | 'hora_trabalho' | 'hora_extra' | 'salario_bruto'
+  unidade_entrada?: 'valor' | 'dias' | 'horas'
+  permite_repetir?: boolean
   created_at?: string
 }
 
@@ -25,6 +33,7 @@ export interface Ocorrencia {
   data_inicio: string
   data_fim?: string
   dias: number
+  horas?: number
   valor?: number
   arquivo_url?: string
   observacao?: string
@@ -44,6 +53,7 @@ export function useOcorrencias() {
       const { data, error } = await supabase
         .from('tipos_ocorrencia')
         .select('*')
+        .eq('ativo', true)
         .order('titulo')
 
       if (error) throw error
@@ -259,6 +269,7 @@ export function useOcorrencias() {
     data_inicio: string
     data_fim?: string
     dias?: number
+    horas?: number
     valor?: number
     arquivo_url?: string
     observacao?: string
@@ -270,9 +281,16 @@ export function useOcorrencias() {
       const { data, error } = await supabase
         .from('ocorrencias')
         .insert({
-          ...payload,
-          dias: payload.dias || 1,
-          absenteismo: payload.absenteismo || false,
+          funcionario_id: payload.funcionario_id,
+          tipo_ocorrencia_id: payload.tipo_ocorrencia_id,
+          descricao: payload.descricao || null,
+          data_inicio: payload.data_inicio,
+          data_fim: payload.data_fim || null,
+          dias: payload.dias || null,
+          horas: payload.horas || null,
+          valor: payload.valor || null,
+          arquivo_url: payload.arquivo_url || null,
+          observacao: payload.observacao || null,
         })
         .select()
         .single()

@@ -87,6 +87,12 @@ export default function FeriasPage() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
+      // Update status before loading
+      const { error: rpcError } = await supabase.rpc('fn_atualizar_status_ferias')
+      if (rpcError) {
+        console.error('Erro ao atualizar status ferias:', rpcError)
+      }
+
       const [av, pf, fc] = await Promise.all([
         loadFeriasAVencer(),
         loadProximasFerias(),
@@ -95,6 +101,9 @@ export default function FeriasPage() {
       setFeriasAVencer(av)
       setProximasFerias(pf)
       setFeriasColetivas(fc)
+    } catch (err) {
+      console.error('Erro ao carregar dados de ferias:', err)
+      toast.error('Erro ao carregar dados de ferias')
     } finally {
       setLoading(false)
     }

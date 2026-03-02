@@ -60,7 +60,6 @@ const funcaoSchema = z.object({
 
 const motivoDesligamentoSchema = z.object({
   titulo: z.string().min(1, 'Titulo obrigatorio'),
-  descricao: z.string().optional(),
 })
 
 type UnidadeForm = z.infer<typeof unidadeSchema>
@@ -208,7 +207,7 @@ function CadastrosPage() {
       }
 
       // Load motivos de desligamento
-      const { data: motivos } = await supabase.from('motivos_desligamento').select('*').order('titulo')
+      const { data: motivos } = await supabase.from('motivos_desligamento').select('id, titulo, ativo').order('titulo')
       setMotivosDesligamento(motivos || [])
     } catch (err) {
       console.error('Erro ao carregar dados:', err)
@@ -960,14 +959,18 @@ function MotivosDesligamentoTable({ data, onEdit, onDelete }: { data: Record<str
     <Table>
       <TableHeader>
         <TableHead>Titulo</TableHead>
-        <TableHead>Descricao</TableHead>
+        <TableHead>Status</TableHead>
         <TableHead className="w-24">Acoes</TableHead>
       </TableHeader>
       <TableBody>
         {data.map((m) => (
           <TableRow key={m.id as string}>
             <TableCell className="font-medium">{m.titulo as string}</TableCell>
-            <TableCell className="max-w-[300px] truncate">{(m.descricao as string) || '-'}</TableCell>
+            <TableCell>
+              <Badge variant={m.ativo !== false ? 'success' : 'neutral'}>
+                {m.ativo !== false ? 'Ativo' : 'Inativo'}
+              </Badge>
+            </TableCell>
             <TableCell>
               <div className="flex gap-1">
                 <button onClick={() => onEdit(m.id as string)} className="p-1.5 text-azul-medio hover:bg-blue-50 rounded"><Pencil size={16} /></button>
@@ -994,33 +997,34 @@ function MotivoDesligamentoModal({
   useEffect(() => {
     if (open) {
       if (editingId) {
-        supabase.from('motivos_desligamento').select('*').eq('id', editingId).single().then(({ data }) => {
+        supabase.from('motivos_desligamento').select('id, titulo, ativo').eq('id', editingId).single().then(({ data }) => {
           if (data) {
             reset({
               titulo: (data.titulo as string) || '',
-              descricao: (data.descricao as string) || '',
             })
           }
         })
       } else {
-        reset({ titulo: '', descricao: '' })
+        reset({ titulo: '' })
       }
     }
   }, [open, editingId, supabase, reset])
 
   async function onSubmit(data: MotivoDesligamentoForm) {
-    const payload = {
-      titulo: data.titulo,
-      descricao: data.descricao || null,
-    }
-
     if (editingId) {
-      const { error } = await supabase.from('motivos_desligamento').update(payload).eq('id', editingId)
-      if (error) { toast.error('Erro: ' + error.message); return }
+      const { data: result, error } = await supabase
+        .from('motivos_desligamento')
+        .update({ titulo: data.titulo })
+        .eq('id', editingId)
+        .select()
+      if (error) { console.error('Erro:', error); toast.error('Erro: ' + error.message); return }
       toast.success('Motivo atualizado')
     } else {
-      const { error } = await supabase.from('motivos_desligamento').insert(payload)
-      if (error) { toast.error('Erro: ' + error.message); return }
+      const { data: result, error } = await supabase
+        .from('motivos_desligamento')
+        .insert({ titulo: data.titulo, ativo: true })
+        .select()
+      if (error) { console.error('Erro:', error); toast.error('Erro: ' + error.message); return }
       toast.success('Motivo criado')
     }
     onSaved()
@@ -1030,7 +1034,6 @@ function MotivoDesligamentoModal({
     <Modal open={open} onClose={onClose} title={editingId ? 'Editar Motivo de Desligamento' : 'Novo Motivo de Desligamento'}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Input label="Titulo *" {...register('titulo')} error={errors.titulo?.message} placeholder="Ex: Pedido de demissao" />
-        <Input label="Descricao" {...register('descricao')} placeholder="Descricao opcional" />
 
         <div className="flex justify-end gap-3 pt-4">
           <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>

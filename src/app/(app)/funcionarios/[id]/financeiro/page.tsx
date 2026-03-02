@@ -33,6 +33,7 @@ import {
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
+import { formatDateSafe } from '@/lib/dateUtils'
 
 function formatCurrency(value: number | null | undefined): string {
   if (value == null) return 'R$ 0,00'
@@ -40,11 +41,7 @@ function formatCurrency(value: number | null | undefined): string {
 }
 
 function formatDate(dateStr: string): string {
-  try {
-    return format(new Date(dateStr + 'T00:00:00'), 'dd/MM/yyyy', { locale: ptBR })
-  } catch {
-    return dateStr
-  }
+  return formatDateSafe(dateStr)
 }
 
 export default function FinanceiroFuncionarioPage() {
@@ -82,6 +79,16 @@ export default function FinanceiroFuncionarioPage() {
   const [transacaoEditing, setTransacaoEditing] = useState<Transacao | null>(null)
   const [tipoFormOpen, setTipoFormOpen] = useState(false)
 
+  // RPC values
+  const [valoresFuncionario, setValoresFuncionario] = useState<{
+    salario_bruto?: number
+    adicional_insalubridade?: number
+    base_calculo?: number
+    valor_dia?: number
+    valor_hora?: number
+    valor_hora_extra?: number
+  } | null>(null)
+
   // Filters
   const [filtroMes, setFiltroMes] = useState(() => {
     const now = new Date()
@@ -110,6 +117,12 @@ export default function FinanceiroFuncionarioPage() {
       setSalarioAtual(salAtual)
       setSalarios(salHist)
       setTipos(tiposData)
+
+      // Load RPC values
+      const { data: rpcData } = await supabase.rpc('fn_valores_funcionario', { p_funcionario_id: id })
+      if (rpcData && rpcData.length > 0) {
+        setValoresFuncionario(rpcData[0])
+      }
     } finally {
       setLoading(false)
     }
@@ -282,6 +295,30 @@ export default function FinanceiroFuncionarioPage() {
         </div>
       </div>
 
+      {/* Valores Calculados (RPC) */}
+      {valoresFuncionario && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+          <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-laranja">
+            <p className="text-sm font-medium text-cinza-estrutural mb-1">Valor Dia de Trabalho</p>
+            <p className="text-2xl font-bold text-cinza-preto">
+              {formatCurrency(valoresFuncionario.valor_dia)}
+            </p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-azul">
+            <p className="text-sm font-medium text-cinza-estrutural mb-1">Valor Hora</p>
+            <p className="text-2xl font-bold text-cinza-preto">
+              {formatCurrency(valoresFuncionario.valor_hora)}
+            </p>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm p-6 border-l-4 border-amarelo">
+            <p className="text-sm font-medium text-cinza-estrutural mb-1">Valor Hora Extra</p>
+            <p className="text-2xl font-bold text-cinza-preto">
+              {formatCurrency(valoresFuncionario.valor_hora_extra)}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Historico Salarial */}
       <Card className="mb-8">
         <div className="flex items-center justify-between mb-4">
@@ -298,45 +335,61 @@ export default function FinanceiroFuncionarioPage() {
             description="Registre o primeiro salario deste funcionario"
           />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableHead>Data Vigencia</TableHead>
-              <TableHead>Salario Bruto</TableHead>
-              <TableHead>Salario Liquido</TableHead>
-              <TableHead>Custo Funcionario</TableHead>
-              <TableHead>Observacao</TableHead>
-              <TableHead className="text-right">Acoes</TableHead>
-            </TableHeader>
-            <TableBody>
-              {salarios.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell>{formatDate(s.data_vigencia)}</TableCell>
-                  <TableCell className="font-medium">{formatCurrency(s.salario_bruto)}</TableCell>
-                  <TableCell>{formatCurrency(s.salario_liquido)}</TableCell>
-                  <TableCell>{formatCurrency(s.custo_funcionario)}</TableCell>
-                  <TableCell className="max-w-[200px] truncate">{s.observacao || '-'}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={() => { setSalarioEditing(s); setSalarioFormOpen(true) }}
-                        className="p-1.5 text-cinza-estrutural hover:text-azul transition-colors"
-                        title="Editar"
-                      >
-                        <Pencil size={14} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteSalario(s)}
-                        className="p-1.5 text-cinza-estrutural hover:text-red-500 transition-colors"
-                        title="Excluir"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableHead>Data Vigencia</TableHead>
+                <TableHead>Salario Bruto</TableHead>
+                <TableHead>Insalubridade</TableHead>
+                <TableHead>Adic. Pagamento</TableHead>
+                <TableHead>Vale Alimentacao</TableHead>
+                <TableHead>Desc. Sindicato</TableHead>
+                <TableHead>Salario Liquido</TableHead>
+                <TableHead>Custo Funcionario</TableHead>
+                <TableHead>Obs.</TableHead>
+                <TableHead className="text-right">Acoes</TableHead>
+              </TableHeader>
+              <TableBody>
+                {salarios.map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell>{formatDate(s.data_vigencia)}</TableCell>
+                    <TableCell className="font-medium">{formatCurrency(s.salario_bruto)}</TableCell>
+                    <TableCell>
+                      {s.adicional_insalubridade ? (
+                        <span title={s.percentual_insalubridade ? `${s.percentual_insalubridade}%` : ''}>
+                          {formatCurrency(s.adicional_insalubridade)}
+                        </span>
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>{s.adicional_pagamento ? formatCurrency(s.adicional_pagamento) : '-'}</TableCell>
+                    <TableCell>{s.vale_alimentacao ? formatCurrency(s.vale_alimentacao) : '-'}</TableCell>
+                    <TableCell>{s.desconto_sindicato ? formatCurrency(s.desconto_sindicato) : '-'}</TableCell>
+                    <TableCell>{formatCurrency(s.salario_liquido)}</TableCell>
+                    <TableCell>{formatCurrency(s.custo_funcionario)}</TableCell>
+                    <TableCell className="max-w-[120px] truncate">{s.observacao || '-'}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => { setSalarioEditing(s); setSalarioFormOpen(true) }}
+                          className="p-1.5 text-cinza-estrutural hover:text-azul transition-colors"
+                          title="Editar"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSalario(s)}
+                          className="p-1.5 text-cinza-estrutural hover:text-red-500 transition-colors"
+                          title="Excluir"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </Card>
 
@@ -457,6 +510,11 @@ export default function FinanceiroFuncionarioPage() {
         initial={salarioEditing ? {
           id: salarioEditing.id,
           salario_bruto: salarioEditing.salario_bruto,
+          adicional_insalubridade: salarioEditing.adicional_insalubridade,
+          percentual_insalubridade: salarioEditing.percentual_insalubridade,
+          adicional_pagamento: salarioEditing.adicional_pagamento,
+          vale_alimentacao: salarioEditing.vale_alimentacao,
+          desconto_sindicato: salarioEditing.desconto_sindicato,
           salario_liquido: salarioEditing.salario_liquido,
           custo_funcionario: salarioEditing.custo_funcionario,
           data_vigencia: salarioEditing.data_vigencia,

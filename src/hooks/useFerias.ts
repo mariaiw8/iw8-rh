@@ -124,7 +124,11 @@ export function useFerias() {
         .select('*')
         .order('dias_para_vencer', { ascending: true })
 
-      if (error) throw error
+      if (error) {
+        console.error('Erro ao carregar view vw_ferias_a_vencer:', error)
+        toast.error('Erro ao carregar ferias a vencer')
+        return []
+      }
       const items = (data || []) as FeriasAVencer[]
       return await enrichWithNames(items)
     } catch (err) {
@@ -142,7 +146,11 @@ export function useFerias() {
         .select('*')
         .order('data_inicio', { ascending: true })
 
-      if (error) throw error
+      if (error) {
+        console.error('Erro ao carregar view vw_proximas_ferias:', error)
+        toast.error('Erro ao carregar proximas ferias')
+        return []
+      }
       const items = (data || []) as ProximasFerias[]
       return await enrichWithNames(items)
     } catch (err) {
@@ -191,17 +199,26 @@ export function useFerias() {
     tipo?: string
     status?: string
     periodo_aquisitivo_id?: string
+    ferias_saldo_id?: string
     abono_pecuniario?: boolean
     dias_vendidos?: number
     observacao?: string
   }) => {
     try {
+      const saldoId = payload.ferias_saldo_id || payload.periodo_aquisitivo_id
       const { data, error } = await supabase
         .from('ferias')
         .insert({
-          ...payload,
+          funcionario_id: payload.funcionario_id,
+          ferias_saldo_id: saldoId || null,
+          data_inicio: payload.data_inicio,
+          data_fim: payload.data_fim,
+          dias: payload.dias,
           tipo: payload.tipo || 'Individual',
           status: payload.status || 'Programada',
+          abono_pecuniario: payload.abono_pecuniario || false,
+          dias_vendidos: payload.dias_vendidos || 0,
+          observacao: payload.observacao || null,
         })
         .select()
         .single()
