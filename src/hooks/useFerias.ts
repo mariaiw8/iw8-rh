@@ -48,7 +48,8 @@ export interface Ferias {
   dias: number
   tipo: string
   status: string
-  periodo_aquisitivo_id?: string
+  ferias_saldo_id?: string
+  periodo_aquisitivo_id?: string // legado
   abono_pecuniario?: boolean
   dias_vendidos?: number
   observacao?: string
@@ -173,7 +174,7 @@ export function useFerias() {
         .from('ferias_saldo')
         .select('*')
         .eq('funcionario_id', funcionarioId)
-        .order('periodo_inicio', { ascending: false })
+        .order('periodo_aquisitivo_inicio', { ascending: false })
 
       if (error) throw error
       return (data || []) as FeriasSaldo[]
@@ -190,30 +191,39 @@ export function useFerias() {
     dias: number
     tipo?: string
     status?: string
-    periodo_aquisitivo_id?: string
+    ferias_saldo_id?: string
+    periodo_aquisitivo_id?: string // legado
     abono_pecuniario?: boolean
     dias_vendidos?: number
     observacao?: string
   }) => {
     try {
+      const saldoId = payload.ferias_saldo_id || payload.periodo_aquisitivo_id
       const { data, error } = await supabase
         .from('ferias')
         .insert({
-          ...payload,
+          funcionario_id: payload.funcionario_id,
+          ferias_saldo_id: saldoId,
+          data_inicio: payload.data_inicio,
+          data_fim: payload.data_fim,
+          dias: payload.dias,
           tipo: payload.tipo || 'Individual',
           status: payload.status || 'Programada',
+          abono_pecuniario: payload.abono_pecuniario || false,
+          dias_vendidos: payload.dias_vendidos || 0,
+          observacao: payload.observacao,
         })
         .select()
         .single()
 
       if (error) throw error
 
-      // Update saldo if periodo_aquisitivo_id is provided
-      if (payload.periodo_aquisitivo_id) {
+      // Update saldo vinculado ao periodo aquisitivo selecionado
+      if (saldoId) {
         const { data: saldo } = await supabase
           .from('ferias_saldo')
           .select('dias_gozados, dias_vendidos')
-          .eq('id', payload.periodo_aquisitivo_id)
+          .eq('id', saldoId)
           .single()
 
         if (saldo) {
@@ -226,7 +236,7 @@ export function useFerias() {
           await supabase
             .from('ferias_saldo')
             .update(updatePayload)
-            .eq('id', payload.periodo_aquisitivo_id)
+            .eq('id', saldoId)
         }
       }
 

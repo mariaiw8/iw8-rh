@@ -160,7 +160,7 @@ export default function FeriasPage() {
       data_fim: data.data_fim,
       dias: data.dias,
       tipo: data.tipo,
-      periodo_aquisitivo_id: data.periodo_aquisitivo_id || undefined,
+      ferias_saldo_id: data.ferias_saldo_id || data.periodo_aquisitivo_id || undefined,
       abono_pecuniario: data.abono_pecuniario,
       dias_vendidos: data.dias_vendidos,
       observacao: data.observacao || undefined,

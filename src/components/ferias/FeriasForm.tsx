@@ -132,6 +132,7 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
     try {
       await onSubmit({
         ...form,
+        ferias_saldo_id: form.ferias_saldo_id,
         periodo_aquisitivo_id: form.ferias_saldo_id,
       })
       setForm({
