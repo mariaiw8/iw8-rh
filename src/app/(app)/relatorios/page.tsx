@@ -21,9 +21,10 @@ import { format } from 'date-fns'
 import {
   Users, CalendarClock, Calendar, ClipboardList,
   DollarSign, Cake, BarChart3, ArrowLeft, FileBarChart, Search, AlertTriangle,
+  Banknote, Receipt,
 } from 'lucide-react'
 
-type ReportType = 'lista' | 'ferias-vencer' | 'programacao-ferias' | 'ocorrencias' | 'folha' | 'aniversariantes' | 'resumo' | 'absenteismo' | null
+type ReportType = 'lista' | 'ferias-vencer' | 'programacao-ferias' | 'ocorrencias' | 'folha' | 'aniversariantes' | 'resumo' | 'absenteismo' | 'adiantamentos' | 'pagamentos' | null
 
 function formatDate(d: string) {
   if (!d) return '-'
@@ -77,8 +78,12 @@ export default function RelatoriosPage() {
   const [filtroDataInicio, setFiltroDataInicio] = useState('')
   const [filtroDataFim, setFiltroDataFim] = useState('')
   const [filtroMes, setFiltroMes] = useState(String(new Date().getMonth() + 1))
+  const [filtroAno, setFiltroAno] = useState(String(new Date().getFullYear()))
   const [searchTerm, setSearchTerm] = useState('')
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(null)
+
+  // Pagamentos detail state
+  const [pagamentosData, setPagamentosData] = useState<Record<string, unknown>[]>([])
 
   // Absenteismo specific state
   const [absenteismoMensal, setAbsenteismoMensal] = useState<AbsenteismoMensal[]>([])
@@ -188,6 +193,31 @@ export default function RelatoriosPage() {
         }
         case 'absenteismo': {
           await loadAbsenteismoReport()
+          break
+        }
+        case 'adiantamentos': {
+          try {
+            const mes = parseInt(filtroMes)
+            const ano = parseInt(filtroAno)
+            const { data: result, error } = await supabase.rpc('fn_relatorio_adiantamentos', { p_mes: mes, p_ano: ano })
+            if (error) throw error
+            setData((result || []) as Record<string, unknown>[])
+          } catch (err) {
+            console.error('Erro ao carregar adiantamentos:', err)
+          }
+          break
+        }
+        case 'pagamentos': {
+          try {
+            const mes = parseInt(filtroMes)
+            const ano = parseInt(filtroAno)
+            const { data: result, error } = await supabase.rpc('fn_relatorio_pagamentos', { p_mes: mes, p_ano: ano })
+            if (error) throw error
+            setPagamentosData((result || []) as Record<string, unknown>[])
+            setData((result || []) as Record<string, unknown>[])
+          } catch (err) {
+            console.error('Erro ao carregar pagamentos:', err)
+          }
           break
         }
       }
@@ -430,6 +460,25 @@ export default function RelatoriosPage() {
           { key: 'total_ocorrencias', header: 'Ocorrencias' },
           { key: 'taxa', header: 'Taxa (%)' },
         ]
+      case 'adiantamentos':
+        return [
+          { key: 'nome_completo', header: 'Funcionario' },
+          { key: 'codigo', header: 'Codigo' },
+          { key: 'unidade', header: 'Unidade' },
+          { key: 'valor', header: 'Valor', format: (v) => formatCurrency(v as number) },
+          { key: 'data', header: 'Data', format: (v) => formatDate(v as string) },
+          { key: 'observacao', header: 'Observacao' },
+        ]
+      case 'pagamentos':
+        return [
+          { key: 'nome_completo', header: 'Funcionario' },
+          { key: 'salario_bruto', header: 'Salario Bruto', format: (v) => formatCurrency(v as number) },
+          { key: 'adicional_insalubridade', header: 'Insalubridade', format: (v) => formatCurrency(v as number) },
+          { key: 'adicional_pagamento', header: 'Adic. Pgto', format: (v) => formatCurrency(v as number) },
+          { key: 'creditos', header: 'Creditos', format: (v) => formatCurrency(v as number) },
+          { key: 'debitos', header: 'Debitos', format: (v) => formatCurrency(v as number) },
+          { key: 'total', header: 'Total', format: (v) => formatCurrency(v as number) },
+        ]
       default:
         return []
     }
@@ -445,6 +494,8 @@ export default function RelatoriosPage() {
       case 'aniversariantes': return 'Aniversariantes'
       case 'resumo': return 'Resumo de Indicadores'
       case 'absenteismo': return 'Absenteismo'
+      case 'adiantamentos': return 'Relatorio de Adiantamentos'
+      case 'pagamentos': return 'Relatorio de Pagamentos'
       default: return 'Relatorio'
     }
   }
@@ -523,6 +574,18 @@ export default function RelatoriosPage() {
             description="Taxa de absenteismo, dias perdidos, grafico mensal e ranking por funcionario"
             icon={<AlertTriangle size={24} />}
             onClick={() => { resetFilters(); setActiveReport('absenteismo') }}
+          />
+          <ReportCard
+            title="Relatorio de Adiantamentos"
+            description="Adiantamentos por mes com funcionario, valor, data e observacao"
+            icon={<Banknote size={24} />}
+            onClick={() => { resetFilters(); setActiveReport('adiantamentos') }}
+          />
+          <ReportCard
+            title="Relatorio de Pagamentos"
+            description="Pagamento completo por funcionario com creditos, debitos e total"
+            icon={<Receipt size={24} />}
+            onClick={() => { resetFilters(); setActiveReport('pagamentos') }}
           />
         </div>
       </PageContainer>
@@ -696,6 +759,96 @@ export default function RelatoriosPage() {
     )
   }
 
+  // Pagamentos report has a special layout with per-employee breakdown
+  if (activeReport === 'pagamentos' && pagamentosData.length > 0 && !reportLoading) {
+    return (
+      <PageContainer>
+        <div className="mb-6 flex items-center justify-between flex-wrap gap-4 print:mb-2">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => { setActiveReport(null); setData([]); setPagamentosData([]) }} className="print:hidden">
+              <ArrowLeft size={16} /> Voltar
+            </Button>
+            <h2 className="text-xl font-bold text-cinza-preto">{getReportTitle()}</h2>
+          </div>
+          <div className="flex items-center gap-2 print:hidden">
+            <PrintButton />
+            <ExportButton data={pagamentosData} columns={getColumns()} filename={getFilename()} />
+          </div>
+        </div>
+
+        {/* Filters */}
+        <Card className="mb-6 print:hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Select label="Mes" options={meses} value={filtroMes} onChange={(e) => setFiltroMes(e.target.value)} />
+            <Input label="Ano" type="number" value={filtroAno} onChange={(e) => setFiltroAno(e.target.value)} placeholder="2026" />
+          </div>
+          <div className="mt-4 flex gap-2">
+            <Button size="sm" onClick={() => loadReport('pagamentos')}>
+              <Search size={14} /> Gerar Relatorio
+            </Button>
+          </div>
+        </Card>
+
+        {/* Per-employee breakdown */}
+        <div className="space-y-6">
+          {pagamentosData.map((func, idx) => {
+            const salBruto = (func.salario_bruto as number) || 0
+            const insalubridade = (func.adicional_insalubridade as number) || 0
+            const adicPgto = (func.adicional_pagamento as number) || 0
+            const creditos = (func.creditos as number) || 0
+            const debitos = (func.debitos as number) || 0
+            const total = (func.total as number) || (salBruto + insalubridade + adicPgto + creditos - debitos)
+
+            return (
+              <Card key={idx} className="print:break-inside-avoid print:shadow-none print:border print:border-gray-300">
+                <h3 className="text-base font-bold text-cinza-preto mb-3">
+                  {func.nome_completo as string}
+                  {func.codigo ? <span className="text-sm text-cinza-estrutural ml-2">({String(func.codigo)})</span> : null}
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-cinza-estrutural text-xs mb-1">Salario Bruto</p>
+                    <p className="font-bold">{formatCurrency(salBruto)}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-cinza-estrutural text-xs mb-1">Insalubridade</p>
+                    <p className="font-bold">{formatCurrency(insalubridade)}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <p className="text-cinza-estrutural text-xs mb-1">Adic. Pagamento</p>
+                    <p className="font-bold">{formatCurrency(adicPgto)}</p>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-3">
+                    <p className="text-green-600 text-xs mb-1">Creditos</p>
+                    <p className="font-bold text-green-700">{formatCurrency(creditos)}</p>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-3">
+                    <p className="text-red-600 text-xs mb-1">Debitos</p>
+                    <p className="font-bold text-red-600">{formatCurrency(debitos)}</p>
+                  </div>
+                  <div className="bg-azul/5 rounded-lg p-3 col-span-2 sm:col-span-3">
+                    <p className="text-azul text-xs mb-1">Total</p>
+                    <p className="font-bold text-lg text-azul">{formatCurrency(total)}</p>
+                  </div>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+
+        {/* Grand Total */}
+        <div className="mt-6 bg-azul text-white rounded-xl p-6">
+          <div className="flex justify-between items-center">
+            <span className="font-medium">Total Geral ({pagamentosData.length} funcionarios)</span>
+            <span className="text-2xl font-bold">
+              {formatCurrency(pagamentosData.reduce((s, f) => s + ((f.total as number) || 0), 0))}
+            </span>
+          </div>
+        </div>
+      </PageContainer>
+    )
+  }
+
   // Report detail view (standard reports)
   const columns = getColumns()
 
@@ -802,6 +955,24 @@ export default function RelatoriosPage() {
               onChange={(e) => setFiltroMes(e.target.value)}
             />
           )}
+
+          {(activeReport === 'adiantamentos' || activeReport === 'pagamentos') && (
+            <>
+              <Select
+                label="Mes"
+                options={meses}
+                value={filtroMes}
+                onChange={(e) => setFiltroMes(e.target.value)}
+              />
+              <Input
+                label="Ano"
+                type="number"
+                value={filtroAno}
+                onChange={(e) => setFiltroAno(e.target.value)}
+                placeholder="2026"
+              />
+            </>
+          )}
         </div>
         <div className="mt-4 flex gap-2">
           <Button size="sm" onClick={() => loadReport(activeReport)}>
@@ -869,6 +1040,14 @@ export default function RelatoriosPage() {
                   <span>Liquido: {formatCurrency(filteredData.reduce((s, r) => s + ((r.salario_liquido as number) || 0), 0))}</span>
                   <span>Custo: {formatCurrency(filteredData.reduce((s, r) => s + ((r.custo as number) || 0), 0))}</span>
                 </div>
+              </div>
+            )}
+
+            {/* Adiantamentos totals */}
+            {activeReport === 'adiantamentos' && filteredData.length > 0 && (
+              <div className="bg-azul text-white rounded-b-lg px-4 py-3 flex justify-between text-sm font-medium">
+                <span>Total ({filteredData.length} adiantamentos)</span>
+                <span className="font-bold">{formatCurrency(filteredData.reduce((s, r) => s + ((r.valor as number) || 0), 0))}</span>
               </div>
             )}
           </div>
