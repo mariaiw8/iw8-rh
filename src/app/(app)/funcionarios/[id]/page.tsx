@@ -18,17 +18,8 @@ import { toast } from 'sonner'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { format, differenceInYears, differenceInMonths } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
-
-function safeFormat(dateStr: string | null | undefined, fmt: string = 'dd/MM/yyyy'): string {
-  if (!dateStr) return '-'
-  try {
-    return format(new Date(dateStr + 'T00:00:00'), fmt)
-  } catch {
-    return dateStr
-  }
-}
+import { differenceInYears, differenceInMonths } from 'date-fns'
+import { formatDateSafe, safeDate } from '@/lib/dateUtils'
 
 import { useFerias, type FeriasSaldo, type Ferias, type FeriasExtrato } from '@/hooks/useFerias'
 import { useOcorrencias, type Ocorrencia, type TipoOcorrencia } from '@/hooks/useOcorrencias'
@@ -125,7 +116,8 @@ export default function FuncionarioDetailPage() {
 
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(searchParams.get('edit') === 'true')
-  const [activeTab, setActiveTab] = useState<TabKey>('dados')
+  const initialTab = (searchParams.get('tab') as TabKey) || 'dados'
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab)
   const [funcionario, setFuncionario] = useState<Record<string, unknown> | null>(null)
   const [fotoPreview, setFotoPreview] = useState<string | null>(null)
   const [fotoFile, setFotoFile] = useState<File | null>(null)
@@ -388,9 +380,10 @@ export default function FuncionarioDetailPage() {
 
   function getTempoEmpresa() {
     if (!funcionario?.data_admissao) return null
-    const admissao = new Date((funcionario.data_admissao as string) + 'T00:00:00')
+    const admissao = safeDate(funcionario.data_admissao as string)
+    if (!admissao) return null
     const ref = funcionario.data_desligamento
-      ? new Date((funcionario.data_desligamento as string) + 'T00:00:00')
+      ? safeDate(funcionario.data_desligamento as string) || new Date()
       : new Date()
     const anos = differenceInYears(ref, admissao)
     const meses = differenceInMonths(ref, admissao) % 12
@@ -900,7 +893,8 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
 
   const proximaFerias = ferias.find((f) => f.status === 'Programada')
   const alertCount = saldos.filter((s) => {
-    const vencimento = new Date(s.data_vencimento + 'T00:00:00')
+    const vencimento = safeDate(s.data_vencimento)
+    if (!vencimento) return false
     const now = new Date()
     const diffMs = vencimento.getTime() - now.getTime()
     const diffDays = diffMs / (1000 * 60 * 60 * 24)
@@ -1062,10 +1056,10 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
           {proximaFerias ? (
             <>
               <p className="text-lg font-bold text-cinza-preto">
-                {safeFormat(proximaFerias.data_inicio)}
+                {formatDateSafe(proximaFerias.data_inicio)}
               </p>
               <p className="text-xs text-cinza-estrutural mt-1">
-                ate {safeFormat(proximaFerias.data_fim)} ({proximaFerias.dias} dias)
+                ate {formatDateSafe(proximaFerias.data_fim)} ({proximaFerias.dias} dias)
               </p>
             </>
           ) : (
@@ -1149,7 +1143,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
                   onClick={() => setEditingExtrato(e)}
                 >
                   <TableCell>
-                    {safeFormat(e.data_movimento)}
+                    {formatDateSafe(e.data_movimento)}
                   </TableCell>
                   <TableCell>
                     {e.tipo_movimento === 'CRÉDITO' ? (
@@ -1173,6 +1167,83 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
               ))}
             </TableBody>
           </Table>
+        )}
+      </Card>
+
+      {/* Periodos Aquisitivos com cores por status (TAREFA 4) */}
+      <Card>
+        <h3 className="text-lg font-bold text-cinza-preto mb-4 flex items-center gap-2">
+          <Clock size={18} className="text-azul-medio" />
+          Periodos Aquisitivos
+        </h3>
+        {saldos.length === 0 ? (
+          <EmptyState
+            icon={<Clock size={40} />}
+            title="Nenhum periodo"
+            description="Nenhum periodo aquisitivo encontrado"
+          />
+        ) : (
+          <div className="space-y-3">
+            {saldos.map((s) => {
+              const usados = (s.dias_gozados || 0) + (s.dias_vendidos || 0)
+              const percentual = s.dias_direito > 0 ? Math.min(100, (usados / s.dias_direito) * 100) : 0
+              const borderColor =
+                s.status === 'Disponível' ? 'border-green-300 bg-green-50/30' :
+                s.status === 'Parcial' ? 'border-amber-300 bg-amber-50/30' :
+                s.status === 'Vencido' ? 'border-red-300 bg-red-50/30' :
+                'border-gray-300 bg-gray-50/30'
+              return (
+                <div key={s.id} className={`border rounded-lg p-4 ${borderColor}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-medium text-cinza-preto">
+                      {formatDateSafe(s.periodo_aquisitivo_inicio)} a {formatDateSafe(s.periodo_aquisitivo_fim)}
+                    </div>
+                    {getSaldoStatusBadge(s.status)}
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm mb-3">
+                    <div>
+                      <span className="text-gray-500">Direito:</span>{' '}
+                      <span className="font-medium">{s.dias_direito} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Gozados:</span>{' '}
+                      <span className="font-medium">{s.dias_gozados} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Vendidos:</span>{' '}
+                      <span className="font-medium">{s.dias_vendidos} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Programados:</span>{' '}
+                      <span className="font-medium">{(s as FeriasSaldo & { dias_programados?: number }).dias_programados ?? 0} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Saldo:</span>{' '}
+                      <span className="font-medium text-emerald-600">{s.dias_restantes} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Vencimento:</span>{' '}
+                      <span className="font-medium">{formatDateSafe(s.data_vencimento)}</span>
+                    </div>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        s.status === 'Vencido' ? 'bg-red-500' :
+                        s.status === 'Gozado' ? 'bg-gray-400' :
+                        s.status === 'Parcial' ? 'bg-amber-500' :
+                        'bg-green-500'
+                      }`}
+                      style={{ width: `${percentual}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {usados} de {s.dias_direito} dias utilizados ({Math.round(percentual)}%)
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         )}
       </Card>
 
@@ -1207,11 +1278,11 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
                   <TableRow key={f.id}>
                     <TableCell>
                       {saldo
-                        ? `${safeFormat(saldo.periodo_aquisitivo_inicio, 'dd/MM/yy')} - ${safeFormat(saldo.periodo_aquisitivo_fim, 'dd/MM/yy')}`
+                        ? `${formatDateSafe(saldo.periodo_aquisitivo_inicio, 'dd/MM/yy')} - ${formatDateSafe(saldo.periodo_aquisitivo_fim, 'dd/MM/yy')}`
                         : '-'}
                     </TableCell>
-                    <TableCell>{safeFormat(f.data_inicio)}</TableCell>
-                    <TableCell>{safeFormat(f.data_fim)}</TableCell>
+                    <TableCell>{formatDateSafe(f.data_inicio)}</TableCell>
+                    <TableCell>{formatDateSafe(f.data_fim)}</TableCell>
                     <TableCell>{f.dias}</TableCell>
                     <TableCell>{f.tipo}</TableCell>
                     <TableCell>
@@ -1452,7 +1523,7 @@ function OcorrenciasTab({ funcionarioId, funcionarioNome }: { funcionarioId: str
             <TableBody>
               {filtered.map((o) => (
                 <TableRow key={o.id}>
-                  <TableCell>{safeFormat(o.data_inicio)}</TableCell>
+                  <TableCell>{formatDateSafe(o.data_inicio)}</TableCell>
                   <TableCell>
                     <span
                       className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"

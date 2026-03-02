@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import type { FeriasSaldo } from '@/hooks/useFerias'
-import { format } from 'date-fns'
+import { formatDateSafe } from '@/lib/dateUtils'
 
 interface VenderFeriasFormProps {
   open: boolean
@@ -29,13 +29,8 @@ export function VenderFeriasForm({ open, onClose, saldos, onSubmit }: VenderFeri
   function formatPeriodoLabel(s: FeriasSaldo) {
     const inicio = s.periodo_aquisitivo_inicio || s.periodo_inicio || ''
     const fim = s.periodo_aquisitivo_fim || s.periodo_fim || ''
-    let label = ''
-    try {
-      label = `${format(new Date(inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(fim + 'T00:00:00'), 'dd/MM/yyyy')}`
-    } catch {
-      label = `${inicio} a ${fim}`
-    }
-    return `${label} — ${s.dias_restantes} dias disponiveis (${s.dias_vendidos || 0} ja vendidos)`
+    const label = `${formatDateSafe(inicio)} a ${formatDateSafe(fim)}`
+    return `${label} — ${s.dias_restantes ?? 0} dias disponiveis (${s.dias_vendidos || 0} ja vendidos)`
   }
 
   async function handleSubmit(e: React.FormEvent) {

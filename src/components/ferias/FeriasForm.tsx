@@ -8,7 +8,8 @@ import { Select } from '@/components/ui/Select'
 import { Autocomplete } from '@/components/ui/Autocomplete'
 import { createClient } from '@/lib/supabase'
 import { type FeriasSaldo } from '@/hooks/useFerias'
-import { differenceInCalendarDays, format } from 'date-fns'
+import { differenceInCalendarDays } from 'date-fns'
+import { formatDateSafe, safeDate } from '@/lib/dateUtils'
 
 interface FeriasFormProps {
   open: boolean
@@ -67,11 +68,12 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
 
   useEffect(() => {
     if (form.data_inicio && form.data_fim) {
-      const dias = differenceInCalendarDays(
-        new Date(form.data_fim + 'T00:00:00'),
-        new Date(form.data_inicio + 'T00:00:00')
-      ) + 1
-      setForm((prev) => ({ ...prev, dias: dias > 0 ? dias : 0 }))
+      const dFim = safeDate(form.data_fim)
+      const dInicio = safeDate(form.data_inicio)
+      if (dFim && dInicio) {
+        const dias = differenceInCalendarDays(dFim, dInicio) + 1
+        setForm((prev) => ({ ...prev, dias: dias > 0 ? dias : 0 }))
+      }
     }
   }, [form.data_inicio, form.data_fim])
 
@@ -107,13 +109,10 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
 
   async function loadPeriodosDisponiveis(funcId: string) {
     const { data } = await supabase
-      .from('ferias_saldo')
-      .select('*')
-      .eq('funcionario_id', funcId)
-      .in('status', ['Disponível', 'Parcial'])
-      .order('periodo_aquisitivo_inicio')
+      .rpc('fn_resumo_periodos_ferias', { p_funcionario_id: funcId })
 
-    setPeriodosDisponiveis((data || []) as FeriasSaldo[])
+    const periodos = ((data || []) as FeriasSaldo[]).filter((p) => p.dias_restantes > 0)
+    setPeriodosDisponiveis(periodos)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -202,7 +201,7 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
           onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value })}
           options={periodosDisponiveis.map((p) => ({
             value: p.id,
-            label: `${format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')} — ${p.dias_restantes} dias disponiveis`,
+            label: `${formatDateSafe(p.periodo_aquisitivo_inicio)} a ${formatDateSafe(p.periodo_aquisitivo_fim)} — ${p.dias_restantes ?? 0} dias disponiveis`,
           }))}
           placeholder={periodosDisponiveis.length === 0 ? 'Nenhum periodo disponivel' : 'Selecione o periodo'}
           error={validationError || undefined}
