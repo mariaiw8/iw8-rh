@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { createClient } from '@/lib/supabase'
-import { differenceInCalendarDays } from 'date-fns'
+import { safeDifferenceInDays } from '@/lib/dateUtils'
 
 interface FeriasColetivasFormProps {
   open: boolean
@@ -48,10 +48,7 @@ export function FeriasColetivasForm({ open, onClose, onSubmit }: FeriasColetivas
 
   useEffect(() => {
     if (form.data_inicio && form.data_fim) {
-      const dias = differenceInCalendarDays(
-        new Date(form.data_fim + 'T00:00:00'),
-        new Date(form.data_inicio + 'T00:00:00')
-      ) + 1
+      const dias = safeDifferenceInDays(form.data_fim, form.data_inicio) + 1
       setForm((prev) => ({ ...prev, dias: dias > 0 ? dias : 0 }))
     }
   }, [form.data_inicio, form.data_fim])

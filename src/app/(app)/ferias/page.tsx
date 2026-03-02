@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { PageContainer } from '@/components/layout/PageContainer'
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -16,17 +17,9 @@ import { VenderFeriasForm } from '@/components/ferias/VenderFeriasForm'
 import { Select } from '@/components/ui/Select'
 import { useFerias, type FeriasAVencer, type ProximasFerias, type FeriasColetivas, type FeriasExtrato, type FeriasSaldo } from '@/hooks/useFerias'
 import { createClient } from '@/lib/supabase'
-import { Plus, AlertTriangle, Calendar, Users, Trash2, FileText, TrendingUp, TrendingDown, Clock, Ban, DollarSign } from 'lucide-react'
-import { format } from 'date-fns'
-
-function safeFormat(dateStr: string | null | undefined, fmt: string = 'dd/MM/yyyy'): string {
-  if (!dateStr) return '-'
-  try {
-    return format(new Date(dateStr + 'T00:00:00'), fmt)
-  } catch {
-    return dateStr
-  }
-}
+import { formatDateSafe } from '@/lib/dateUtils'
+import { Plus, AlertTriangle, Calendar, Users, Trash2, FileText, TrendingUp, TrendingDown, Clock, Ban, DollarSign, ChevronDown, ChevronUp } from 'lucide-react'
+import { toast } from 'sonner'
 
 function getSituacaoStyle(situacao: string) {
   switch (situacao) {
@@ -77,6 +70,10 @@ export default function FeriasPage() {
   const [feriasColetivas, setFeriasColetivas] = useState<FeriasColetivas[]>([])
   const [showFeriasForm, setShowFeriasForm] = useState(false)
   const [showColetivasForm, setShowColetivasForm] = useState(false)
+
+  // Collapsible sections (TAREFA 5)
+  const [sections, setSections] = useState({ aVencer: true, proximas: true, coletivas: true, extrato: true })
+  const toggleSection = (key: keyof typeof sections) => setSections(prev => ({ ...prev, [key]: !prev[key] }))
 
   // Extrato de Ferias state
   const [funcionarios, setFuncionarios] = useState<{ value: string; label: string }[]>([])
@@ -312,190 +309,215 @@ export default function FeriasPage() {
       {/* Secao 1 - Ferias a Vencer */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>
-            <div className="flex items-center gap-2">
-              <AlertTriangle size={18} className="text-amber-500" />
-              Ferias a Vencer
-              {feriasAVencer.length > 0 && (
-                <Badge variant="danger">{feriasAVencer.length}</Badge>
-              )}
-            </div>
-          </CardTitle>
+          <button type="button" onClick={() => toggleSection('aVencer')} className="flex items-center justify-between w-full">
+            <CardTitle>
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={18} className="text-amber-500" />
+                Ferias a Vencer
+                {feriasAVencer.length > 0 && (
+                  <Badge variant="danger">{feriasAVencer.length}</Badge>
+                )}
+              </div>
+            </CardTitle>
+            {sections.aVencer ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+          </button>
         </CardHeader>
-        {feriasAVencer.length === 0 ? (
-          <EmptyState
-            icon={<AlertTriangle size={40} />}
-            title="Nenhum alerta"
-            description="Todos os periodos de ferias estao em dia"
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableHead>Nome</TableHead>
-              <TableHead>Codigo</TableHead>
-              <TableHead>Periodo Aquisitivo</TableHead>
-              <TableHead>Dias Restantes</TableHead>
-              <TableHead>Vencimento</TableHead>
-              <TableHead>Dias p/ Vencer</TableHead>
-              <TableHead>Situacao</TableHead>
-            </TableHeader>
-            <TableBody>
-              {feriasAVencer.map((f) => (
-                <TableRow
-                  key={f.id}
-                  className={
-                    f.situacao === 'VENCIDA'
-                      ? 'bg-red-50'
-                      : f.situacao === 'ALERTA'
-                      ? 'bg-amber-50'
-                      : ''
-                  }
-                >
-                  <TableCell className="font-medium">{f.nome}</TableCell>
-                  <TableCell>{f.codigo || '-'}</TableCell>
-                  <TableCell>{f.periodo_aquisitivo}</TableCell>
-                  <TableCell>{f.dias_restantes}</TableCell>
-                  <TableCell>
-                    {safeFormat(f.data_vencimento)}
-                  </TableCell>
-                  <TableCell>
-                    {f.dias_para_vencer < 0
-                      ? `${Math.abs(f.dias_para_vencer)} dias atrasado`
-                      : `${f.dias_para_vencer} dias`}
-                  </TableCell>
-                  <TableCell>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSituacaoStyle(f.situacao)}`}>
-                      {f.situacao === 'VENCIDA' && '🔴 '}
-                      {f.situacao === 'ALERTA' && '🟡 '}
-                      {f.situacao === 'OK' && '✅ '}
-                      {f.situacao}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <div className={`overflow-hidden transition-all duration-200 ${sections.aVencer ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+          {feriasAVencer.length === 0 ? (
+            <EmptyState
+              icon={<AlertTriangle size={40} />}
+              title="Nenhum alerta"
+              description="Todos os periodos de ferias estao em dia"
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableHead>Nome</TableHead>
+                <TableHead>Codigo</TableHead>
+                <TableHead>Periodo Aquisitivo</TableHead>
+                <TableHead>Dias Restantes</TableHead>
+                <TableHead>Vencimento</TableHead>
+                <TableHead>Dias p/ Vencer</TableHead>
+                <TableHead>Situacao</TableHead>
+              </TableHeader>
+              <TableBody>
+                {feriasAVencer.map((f) => (
+                  <TableRow
+                    key={f.id}
+                    className={
+                      f.situacao === 'VENCIDA'
+                        ? 'bg-red-50'
+                        : f.situacao === 'ALERTA'
+                        ? 'bg-amber-50'
+                        : ''
+                    }
+                  >
+                    <TableCell className="font-medium">
+                      <Link href={`/funcionarios/${f.funcionario_id}?tab=ferias`} className="text-azul hover:text-laranja cursor-pointer hover:underline font-medium">
+                        {f.nome_completo || f.nome || '\u2014'}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{f.codigo || '-'}</TableCell>
+                    <TableCell>{f.periodo_aquisitivo || '\u2014'}</TableCell>
+                    <TableCell>{f.dias_restantes ?? '\u2014'}</TableCell>
+                    <TableCell>
+                      {formatDateSafe(f.data_vencimento)}
+                    </TableCell>
+                    <TableCell>
+                      {f.dias_para_vencer != null
+                        ? f.dias_para_vencer < 0
+                          ? `${Math.abs(f.dias_para_vencer)} dias atrasado`
+                          : `${f.dias_para_vencer} dias`
+                        : '\u2014'}
+                    </TableCell>
+                    <TableCell>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getSituacaoStyle(f.situacao)}`}>
+                        {f.situacao}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
       </Card>
 
       {/* Secao 2 - Proximas Ferias Programadas */}
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>
-            <div className="flex items-center gap-2">
-              <Calendar size={18} className="text-azul-medio" />
-              Proximas Ferias Programadas
-            </div>
-          </CardTitle>
+          <button type="button" onClick={() => toggleSection('proximas')} className="flex items-center justify-between w-full">
+            <CardTitle>
+              <div className="flex items-center gap-2">
+                <Calendar size={18} className="text-azul-medio" />
+                Proximas Ferias Programadas
+              </div>
+            </CardTitle>
+            {sections.proximas ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+          </button>
         </CardHeader>
-        {proximasFerias.length === 0 ? (
-          <EmptyState
-            icon={<Calendar size={40} />}
-            title="Nenhuma ferias programada"
-            description="Nao ha ferias programadas no momento"
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableHead>Nome</TableHead>
-              <TableHead>Codigo</TableHead>
-              <TableHead>Unidade</TableHead>
-              <TableHead>Setor</TableHead>
-              <TableHead>Data Inicio</TableHead>
-              <TableHead>Data Fim</TableHead>
-              <TableHead>Dias</TableHead>
-              <TableHead>Status</TableHead>
-            </TableHeader>
-            <TableBody>
-              {proximasFerias.map((f) => (
-                <TableRow key={f.id}>
-                  <TableCell className="font-medium">{f.nome}</TableCell>
-                  <TableCell>{f.codigo || '-'}</TableCell>
-                  <TableCell>{f.unidade || '-'}</TableCell>
-                  <TableCell>{f.setor || '-'}</TableCell>
-                  <TableCell>
-                    {safeFormat(f.data_inicio)}
-                  </TableCell>
-                  <TableCell>
-                    {safeFormat(f.data_fim)}
-                  </TableCell>
-                  <TableCell>{f.dias}</TableCell>
-                  <TableCell>{getStatusBadge(f.status)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <div className={`overflow-hidden transition-all duration-200 ${sections.proximas ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+          {proximasFerias.length === 0 ? (
+            <EmptyState
+              icon={<Calendar size={40} />}
+              title="Nenhuma ferias programada"
+              description="Nao ha ferias programadas no momento"
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableHead>Nome</TableHead>
+                <TableHead>Codigo</TableHead>
+                <TableHead>Unidade</TableHead>
+                <TableHead>Setor</TableHead>
+                <TableHead>Data Inicio</TableHead>
+                <TableHead>Data Fim</TableHead>
+                <TableHead>Dias</TableHead>
+                <TableHead>Status</TableHead>
+              </TableHeader>
+              <TableBody>
+                {proximasFerias.map((f) => (
+                  <TableRow key={f.id}>
+                    <TableCell className="font-medium">
+                      <Link href={`/funcionarios/${f.funcionario_id}?tab=ferias`} className="text-azul hover:text-laranja cursor-pointer hover:underline font-medium">
+                        {f.nome_completo || f.nome || '\u2014'}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{f.codigo || '-'}</TableCell>
+                    <TableCell>{f.unidade || '-'}</TableCell>
+                    <TableCell>{f.setor || '-'}</TableCell>
+                    <TableCell>
+                      {formatDateSafe(f.data_inicio)}
+                    </TableCell>
+                    <TableCell>
+                      {formatDateSafe(f.data_fim)}
+                    </TableCell>
+                    <TableCell>{f.dias}</TableCell>
+                    <TableCell>{getStatusBadge(f.status)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
       </Card>
 
       {/* Secao 3 - Ferias Coletivas */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between w-full">
-            <CardTitle>
-              <div className="flex items-center gap-2">
-                <Users size={18} className="text-laranja" />
-                Ferias Coletivas
-              </div>
-            </CardTitle>
+            <button type="button" onClick={() => toggleSection('coletivas')} className="flex items-center gap-2 flex-1">
+              <CardTitle>
+                <div className="flex items-center gap-2">
+                  <Users size={18} className="text-laranja" />
+                  Ferias Coletivas
+                </div>
+              </CardTitle>
+              {sections.coletivas ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+            </button>
             <Button variant="secondary" size="sm" onClick={() => setShowColetivasForm(true)}>
               <Plus size={14} /> Registrar Ferias Coletivas
             </Button>
           </div>
         </CardHeader>
-        {feriasColetivas.length === 0 ? (
-          <EmptyState
-            icon={<Users size={40} />}
-            title="Nenhuma ferias coletiva"
-            description="Nenhuma ferias coletiva registrada"
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableHead>Titulo</TableHead>
-              <TableHead>Data Inicio</TableHead>
-              <TableHead>Data Fim</TableHead>
-              <TableHead>Dias</TableHead>
-              <TableHead>Unidade</TableHead>
-              <TableHead>Setor</TableHead>
-              <TableHead>Observacao</TableHead>
-              <TableHead className="w-10"></TableHead>
-            </TableHeader>
-            <TableBody>
-              {feriasColetivas.map((fc) => (
-                <TableRow key={fc.id}>
-                  <TableCell className="font-medium">{fc.titulo}</TableCell>
-                  <TableCell>{safeFormat(fc.data_inicio)}</TableCell>
-                  <TableCell>{safeFormat(fc.data_fim)}</TableCell>
-                  <TableCell>{fc.dias}</TableCell>
-                  <TableCell>{fc.unidade_nome || 'Todas'}</TableCell>
-                  <TableCell>{fc.setor_nome || 'Todos'}</TableCell>
-                  <TableCell className="max-w-[200px] truncate">{fc.observacao || '-'}</TableCell>
-                  <TableCell>
-                    <button
-                      onClick={() => handleDeleteColetivas(fc.id)}
-                      className="text-red-500 hover:bg-red-50 p-1 rounded"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <div className={`overflow-hidden transition-all duration-200 ${sections.coletivas ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+          {feriasColetivas.length === 0 ? (
+            <EmptyState
+              icon={<Users size={40} />}
+              title="Nenhuma ferias coletiva"
+              description="Nenhuma ferias coletiva registrada"
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableHead>Titulo</TableHead>
+                <TableHead>Data Inicio</TableHead>
+                <TableHead>Data Fim</TableHead>
+                <TableHead>Dias</TableHead>
+                <TableHead>Unidade</TableHead>
+                <TableHead>Setor</TableHead>
+                <TableHead>Observacao</TableHead>
+                <TableHead className="w-10"></TableHead>
+              </TableHeader>
+              <TableBody>
+                {feriasColetivas.map((fc) => (
+                  <TableRow key={fc.id}>
+                    <TableCell className="font-medium">{fc.titulo}</TableCell>
+                    <TableCell>{formatDateSafe(fc.data_inicio)}</TableCell>
+                    <TableCell>{formatDateSafe(fc.data_fim)}</TableCell>
+                    <TableCell>{fc.dias}</TableCell>
+                    <TableCell>{fc.unidade_nome || 'Todas'}</TableCell>
+                    <TableCell>{fc.setor_nome || 'Todos'}</TableCell>
+                    <TableCell className="max-w-[200px] truncate">{fc.observacao || '-'}</TableCell>
+                    <TableCell>
+                      <button
+                        onClick={() => handleDeleteColetivas(fc.id)}
+                        className="text-red-500 hover:bg-red-50 p-1 rounded"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
       </Card>
 
       {/* Secao 4 - Extrato de Ferias */}
       <Card className="mt-6">
         <CardHeader>
           <div className="flex items-center justify-between w-full">
-            <CardTitle>
-              <div className="flex items-center gap-2">
-                <FileText size={18} className="text-azul-medio" />
-                Extrato de Ferias
-              </div>
-            </CardTitle>
+            <button type="button" onClick={() => toggleSection('extrato')} className="flex items-center gap-2 flex-1">
+              <CardTitle>
+                <div className="flex items-center gap-2">
+                  <FileText size={18} className="text-azul-medio" />
+                  Extrato de Ferias
+                </div>
+              </CardTitle>
+              {sections.extrato ? <ChevronUp size={20} className="text-cinza-estrutural" /> : <ChevronDown size={20} className="text-cinza-estrutural" />}
+            </button>
             {selectedFuncionarioId && saldos.length > 0 && (
               <Button variant="secondary" size="sm" onClick={() => setShowVenderForm(true)}>
                 <DollarSign size={14} /> Vender Ferias
@@ -503,185 +525,197 @@ export default function FeriasPage() {
             )}
           </div>
         </CardHeader>
-        <div className="p-6 pt-0">
-          {/* Seletor de funcionario */}
-          <Select
-            label="Selecione o Funcionario"
-            value={selectedFuncionarioId}
-            onChange={(e) => setSelectedFuncionarioId(e.target.value)}
-            options={funcionarios}
-            placeholder="Selecione um funcionario..."
-          />
+        <div className={`overflow-hidden transition-all duration-200 ${sections.extrato ? 'max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+          <div className="p-6 pt-0">
+            {/* Seletor de funcionario */}
+            <Select
+              label="Selecione o Funcionario"
+              value={selectedFuncionarioId}
+              onChange={(e) => setSelectedFuncionarioId(e.target.value)}
+              options={funcionarios}
+              placeholder="Selecione um funcionario..."
+            />
 
-          {selectedFuncionarioId && (
-            <>
-              {loadingExtrato ? (
-                <div className="mt-6 space-y-4">
-                  {Array.from({ length: 2 }).map((_, i) => <CardSkeleton key={i} />)}
-                </div>
-              ) : (
-                <>
-                  {/* Cards de resumo */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-                    <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-                      <div className="flex items-center gap-2 text-sm text-blue-600 mb-1">
-                        <Calendar size={14} />
-                        Dias de Direito
-                      </div>
-                      <div className="text-2xl font-bold text-blue-700">{resumo.diasDireito}</div>
-                    </div>
-                    <div className="bg-green-50 rounded-lg p-4 border border-green-100">
-                      <div className="flex items-center gap-2 text-sm text-green-600 mb-1">
-                        <TrendingDown size={14} />
-                        Dias Gozados
-                      </div>
-                      <div className="text-2xl font-bold text-green-700">{resumo.diasGozados}</div>
-                    </div>
-                    <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
-                      <div className="flex items-center gap-2 text-sm text-emerald-600 mb-1">
-                        <TrendingUp size={14} />
-                        Dias Disponiveis
-                      </div>
-                      <div className="text-2xl font-bold text-emerald-700">{resumo.diasDisponiveis}</div>
-                    </div>
-                    <div className="bg-red-50 rounded-lg p-4 border border-red-100">
-                      <div className="flex items-center gap-2 text-sm text-red-600 mb-1">
-                        <Ban size={14} />
-                        Periodos Vencidos
-                      </div>
-                      <div className="text-2xl font-bold text-red-700">{resumo.periodosVencidos}</div>
-                    </div>
+            {selectedFuncionarioId && (
+              <>
+                {loadingExtrato ? (
+                  <div className="mt-6 space-y-4">
+                    {Array.from({ length: 2 }).map((_, i) => <CardSkeleton key={i} />)}
                   </div>
+                ) : (
+                  <>
+                    {/* Cards de resumo */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                      <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                        <div className="flex items-center gap-2 text-sm text-blue-600 mb-1">
+                          <Calendar size={14} />
+                          Dias de Direito
+                        </div>
+                        <div className="text-2xl font-bold text-blue-700">{resumo.diasDireito}</div>
+                      </div>
+                      <div className="bg-green-50 rounded-lg p-4 border border-green-100">
+                        <div className="flex items-center gap-2 text-sm text-green-600 mb-1">
+                          <TrendingDown size={14} />
+                          Dias Gozados
+                        </div>
+                        <div className="text-2xl font-bold text-green-700">{resumo.diasGozados}</div>
+                      </div>
+                      <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
+                        <div className="flex items-center gap-2 text-sm text-emerald-600 mb-1">
+                          <TrendingUp size={14} />
+                          Dias Disponiveis
+                        </div>
+                        <div className="text-2xl font-bold text-emerald-700">{resumo.diasDisponiveis}</div>
+                      </div>
+                      <div className="bg-red-50 rounded-lg p-4 border border-red-100">
+                        <div className="flex items-center gap-2 text-sm text-red-600 mb-1">
+                          <Ban size={14} />
+                          Periodos Vencidos
+                        </div>
+                        <div className="text-2xl font-bold text-red-700">{resumo.periodosVencidos}</div>
+                      </div>
+                    </div>
 
-                  {/* Tabela de extrato */}
-                  <div className="mt-6">
-                    <h3 className="text-lg font-semibold text-cinza-preto mb-3 flex items-center gap-2">
-                      <FileText size={16} />
-                      Movimentacoes
-                      <span className="text-xs text-cinza-estrutural font-normal">(clique para editar)</span>
-                    </h3>
-                    {extrato.length === 0 ? (
-                      <EmptyState
-                        icon={<FileText size={40} />}
-                        title="Nenhuma movimentacao"
-                        description="Nenhum registro de ferias encontrado para este funcionario"
-                      />
-                    ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableHead>Data</TableHead>
-                          <TableHead>Tipo</TableHead>
-                          <TableHead>Descricao</TableHead>
-                          <TableHead>Dias</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableHeader>
-                        <TableBody>
-                          {extrato.map((e, idx) => (
-                            <TableRow
-                              key={`${e.referencia_id}-${idx}`}
-                              className="cursor-pointer hover:bg-gray-50"
-                              onClick={() => setEditingExtrato(e)}
-                            >
-                              <TableCell>
-                                {safeFormat(e.data_movimento)}
-                              </TableCell>
-                              <TableCell>
-                                {e.tipo_movimento === 'CRÉDITO' ? (
-                                  <Badge variant="success">CREDITO</Badge>
-                                ) : (
-                                  <Badge variant="danger">DEBITO</Badge>
-                                )}
-                              </TableCell>
-                              <TableCell>{e.descricao}</TableCell>
-                              <TableCell>
-                                <span className={e.dias > 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                                  {e.dias > 0 ? `+${e.dias}` : e.dias}
-                                </span>
-                              </TableCell>
-                              <TableCell>
-                                {e.tipo_movimento === 'CRÉDITO' && e.saldo_status
-                                  ? getSaldoStatusBadge(e.saldo_status)
-                                  : '-'}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    )}
-                  </div>
+                    {/* Tabela de extrato */}
+                    <div className="mt-6">
+                      <h3 className="text-lg font-semibold text-cinza-preto mb-3 flex items-center gap-2">
+                        <FileText size={16} />
+                        Movimentacoes
+                        <span className="text-xs text-cinza-estrutural font-normal">(clique para editar)</span>
+                      </h3>
+                      {extrato.length === 0 ? (
+                        <EmptyState
+                          icon={<FileText size={40} />}
+                          title="Nenhuma movimentacao"
+                          description="Nenhum registro de ferias encontrado para este funcionario"
+                        />
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Tipo</TableHead>
+                            <TableHead>Descricao</TableHead>
+                            <TableHead>Dias</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableHeader>
+                          <TableBody>
+                            {extrato.map((e, idx) => (
+                              <TableRow
+                                key={`${e.referencia_id}-${idx}`}
+                                className="cursor-pointer hover:bg-gray-50"
+                                onClick={() => setEditingExtrato(e)}
+                              >
+                                <TableCell>
+                                  {formatDateSafe(e.data_movimento)}
+                                </TableCell>
+                                <TableCell>
+                                  {e.tipo_movimento === 'CRÉDITO' ? (
+                                    <Badge variant="success">CREDITO</Badge>
+                                  ) : (
+                                    <Badge variant="danger">DEBITO</Badge>
+                                  )}
+                                </TableCell>
+                                <TableCell>{e.descricao}</TableCell>
+                                <TableCell>
+                                  <span className={e.dias > 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                    {e.dias > 0 ? `+${e.dias}` : e.dias}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  {e.tipo_movimento === 'CRÉDITO' && e.saldo_status
+                                    ? getSaldoStatusBadge(e.saldo_status)
+                                    : '-'}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </div>
 
-                  {/* Tabela de periodos aquisitivos */}
-                  <div className="mt-6">
-                    <h3 className="text-lg font-semibold text-cinza-preto mb-3 flex items-center gap-2">
-                      <Clock size={16} />
-                      Periodos Aquisitivos
-                    </h3>
-                    {saldos.length === 0 ? (
-                      <EmptyState
-                        icon={<Clock size={40} />}
-                        title="Nenhum periodo"
-                        description="Nenhum periodo aquisitivo encontrado para este funcionario"
-                      />
-                    ) : (
-                      <div className="space-y-3">
-                        {saldos.map((s) => {
-                          const usados = (s.dias_gozados || 0) + (s.dias_vendidos || 0)
-                          const percentual = s.dias_direito > 0 ? Math.min(100, (usados / s.dias_direito) * 100) : 0
-                          return (
-                            <div key={s.id} className="border border-gray-200 rounded-lg p-4">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="font-medium text-cinza-preto">
-                                  {safeFormat(s.periodo_aquisitivo_inicio)} a {safeFormat(s.periodo_aquisitivo_fim)}
+                    {/* Periodos Aquisitivos - Cards por periodo (TAREFA 4) */}
+                    <div className="mt-6">
+                      <h3 className="text-lg font-semibold text-cinza-preto mb-3 flex items-center gap-2">
+                        <Clock size={16} />
+                        Periodos Aquisitivos
+                      </h3>
+                      {saldos.length === 0 ? (
+                        <EmptyState
+                          icon={<Clock size={40} />}
+                          title="Nenhum periodo"
+                          description="Nenhum periodo aquisitivo encontrado para este funcionario"
+                        />
+                      ) : (
+                        <div className="space-y-3">
+                          {saldos.map((s) => {
+                            const usados = (s.dias_gozados || 0) + (s.dias_vendidos || 0)
+                            const programados = s.dias_programados ?? 0
+                            const percentual = s.dias_direito > 0 ? Math.min(100, (usados / s.dias_direito) * 100) : 0
+                            const statusColor =
+                              s.status === 'Vencido' ? 'border-red-300 bg-red-50' :
+                              s.status === 'Gozado' ? 'border-gray-300 bg-gray-50' :
+                              s.status === 'Parcial' ? 'border-amber-300 bg-amber-50' :
+                              'border-green-300 bg-green-50'
+                            return (
+                              <div key={s.id} className={`border rounded-lg p-4 ${statusColor}`}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="font-medium text-cinza-preto">
+                                    {formatDateSafe(s.periodo_aquisitivo_inicio)} a {formatDateSafe(s.periodo_aquisitivo_fim)}
+                                  </div>
+                                  {getSaldoStatusBadge(s.status)}
                                 </div>
-                                {getSaldoStatusBadge(s.status)}
+                                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm mb-3">
+                                  <div>
+                                    <span className="text-gray-500">Direito:</span>{' '}
+                                    <span className="font-medium">{s.dias_direito} dias</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Gozados:</span>{' '}
+                                    <span className="font-medium">{s.dias_gozados} dias</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Vendidos:</span>{' '}
+                                    <span className="font-medium">{s.dias_vendidos} dias</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Programados:</span>{' '}
+                                    <span className="font-medium">{programados} dias</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Saldo:</span>{' '}
+                                    <span className="font-medium text-emerald-600">{s.dias_restantes} dias</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Vencimento:</span>{' '}
+                                    <span className="font-medium">{formatDateSafe(s.data_vencimento)}</span>
+                                  </div>
+                                </div>
+                                {/* Barra de progresso */}
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                  <div
+                                    className={`h-2 rounded-full transition-all ${
+                                      s.status === 'Vencido' ? 'bg-red-500' :
+                                      s.status === 'Gozado' ? 'bg-gray-400' :
+                                      s.status === 'Parcial' ? 'bg-amber-500' :
+                                      'bg-green-500'
+                                    }`}
+                                    style={{ width: `${percentual}%` }}
+                                  />
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {usados} de {s.dias_direito} dias utilizados ({Math.round(percentual)}%)
+                                </div>
                               </div>
-                              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mb-3">
-                                <div>
-                                  <span className="text-gray-500">Direito:</span>{' '}
-                                  <span className="font-medium">{s.dias_direito} dias</span>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">Gozados:</span>{' '}
-                                  <span className="font-medium">{s.dias_gozados} dias</span>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">Vendidos:</span>{' '}
-                                  <span className="font-medium">{s.dias_vendidos} dias</span>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">Restantes:</span>{' '}
-                                  <span className="font-medium text-emerald-600">{s.dias_restantes} dias</span>
-                                </div>
-                                <div>
-                                  <span className="text-gray-500">Vencimento:</span>{' '}
-                                  <span className="font-medium">{safeFormat(s.data_vencimento)}</span>
-                                </div>
-                              </div>
-                              {/* Barra de progresso */}
-                              <div className="w-full bg-gray-100 rounded-full h-2">
-                                <div
-                                  className={`h-2 rounded-full transition-all ${
-                                    s.status === 'Vencido' ? 'bg-red-500' :
-                                    s.status === 'Gozado' ? 'bg-gray-400' :
-                                    s.status === 'Parcial' ? 'bg-amber-500' :
-                                    'bg-green-500'
-                                  }`}
-                                  style={{ width: `${percentual}%` }}
-                                />
-                              </div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                {usados} de {s.dias_direito} dias utilizados ({Math.round(percentual)}%)
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </>
-          )}
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -716,9 +750,6 @@ export default function FeriasPage() {
     </PageContainer>
   )
 }
-
-// We need toast import for the edit handler
-import { toast } from 'sonner'
 
 function EditExtratoModal({
   item,

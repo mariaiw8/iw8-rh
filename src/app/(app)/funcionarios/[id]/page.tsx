@@ -18,16 +18,11 @@ import { toast } from 'sonner'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { format, differenceInYears, differenceInMonths } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import { differenceInYears, differenceInMonths } from 'date-fns'
+import { formatDateSafe, safeDate } from '@/lib/dateUtils'
 
 function safeFormat(dateStr: string | null | undefined, fmt: string = 'dd/MM/yyyy'): string {
-  if (!dateStr) return '-'
-  try {
-    return format(new Date(dateStr + 'T00:00:00'), fmt)
-  } catch {
-    return dateStr
-  }
+  return formatDateSafe(dateStr, fmt)
 }
 
 import { useFerias, type FeriasSaldo, type Ferias, type FeriasExtrato } from '@/hooks/useFerias'
@@ -900,11 +895,12 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
 
   const proximaFerias = ferias.find((f) => f.status === 'Programada')
   const alertCount = saldos.filter((s) => {
-    const vencimento = new Date(s.data_vencimento + 'T00:00:00')
+    const vencimento = safeDate(s.data_vencimento)
+    if (!vencimento) return false
     const now = new Date()
     const diffMs = vencimento.getTime() - now.getTime()
     const diffDays = diffMs / (1000 * 60 * 60 * 24)
-    return diffDays > 0 && diffDays <= 120 && s.dias_restantes > 0
+    return diffDays > 0 && diffDays <= 120 && (s.dias_restantes ?? 0) > 0
   }).length
   const vencidaCount = saldos.filter((s) => s.status === 'Vencido').length
 
@@ -1173,6 +1169,84 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
               ))}
             </TableBody>
           </Table>
+        )}
+      </Card>
+
+      {/* Periodos Aquisitivos - Cards por periodo (TAREFA 4c/4d) */}
+      <Card>
+        <h3 className="text-lg font-bold text-cinza-preto mb-4 flex items-center gap-2">
+          <Clock size={18} className="text-azul-medio" />
+          Periodos Aquisitivos
+        </h3>
+        {saldos.length === 0 ? (
+          <EmptyState
+            icon={<Clock size={40} />}
+            title="Nenhum periodo"
+            description="Nenhum periodo aquisitivo encontrado"
+          />
+        ) : (
+          <div className="space-y-3">
+            {saldos.map((s) => {
+              const usados = (s.dias_gozados || 0) + (s.dias_vendidos || 0)
+              const programados = (s as FeriasSaldo & { dias_programados?: number }).dias_programados ?? 0
+              const percentual = s.dias_direito > 0 ? Math.min(100, (usados / s.dias_direito) * 100) : 0
+              const statusColor =
+                s.status === 'Vencido' ? 'border-red-300 bg-red-50' :
+                s.status === 'Gozado' ? 'border-gray-300 bg-gray-50' :
+                s.status === 'Parcial' ? 'border-amber-300 bg-amber-50' :
+                'border-green-300 bg-green-50'
+              return (
+                <div key={s.id} className={`border rounded-lg p-4 ${statusColor}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="font-medium text-cinza-preto">
+                      {formatDateSafe(s.periodo_aquisitivo_inicio)} a {formatDateSafe(s.periodo_aquisitivo_fim)}
+                    </div>
+                    {getSaldoStatusBadge(s.status)}
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm mb-3">
+                    <div>
+                      <span className="text-gray-500">Direito:</span>{' '}
+                      <span className="font-medium">{s.dias_direito} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Gozados:</span>{' '}
+                      <span className="font-medium">{s.dias_gozados} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Vendidos:</span>{' '}
+                      <span className="font-medium">{s.dias_vendidos} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Programados:</span>{' '}
+                      <span className="font-medium">{programados} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Saldo:</span>{' '}
+                      <span className="font-medium text-emerald-600">{s.dias_restantes} dias</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Vencimento:</span>{' '}
+                      <span className="font-medium">{formatDateSafe(s.data_vencimento)}</span>
+                    </div>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${
+                        s.status === 'Vencido' ? 'bg-red-500' :
+                        s.status === 'Gozado' ? 'bg-gray-400' :
+                        s.status === 'Parcial' ? 'bg-amber-500' :
+                        'bg-green-500'
+                      }`}
+                      style={{ width: `${percentual}%` }}
+                    />
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {usados} de {s.dias_direito} dias utilizados ({Math.round(percentual)}%)
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         )}
       </Card>
 

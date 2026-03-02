@@ -14,6 +14,7 @@ export interface FeriasSaldo {
   dias_direito: number
   dias_gozados: number
   dias_vendidos: number
+  dias_programados?: number
   dias_restantes: number
   data_vencimento: string
   status: 'Disponível' | 'Parcial' | 'Gozado' | 'Vencido'
@@ -58,6 +59,7 @@ export interface FeriasAVencer {
   id: string
   funcionario_id: string
   nome: string
+  nome_completo?: string
   codigo?: string
   periodo_aquisitivo: string
   dias_restantes: number
@@ -70,6 +72,7 @@ export interface ProximasFerias {
   id: string
   funcionario_id: string
   nome: string
+  nome_completo?: string
   codigo?: string
   unidade?: string
   setor?: string
@@ -97,8 +100,8 @@ export function useFerias() {
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
 
-  const enrichWithNames = useCallback(async <T extends { funcionario_id?: string; nome?: string }>(items: T[]): Promise<T[]> => {
-    if (!items.length || items[0].nome) return items
+  const enrichWithNames = useCallback(async <T extends { funcionario_id?: string; nome?: string; nome_completo?: string }>(items: T[]): Promise<T[]> => {
+    if (!items.length || (items[0].nome_completo || items[0].nome)) return items
     const ids = [...new Set(items.map(f => f.funcionario_id).filter(Boolean))] as string[]
     if (!ids.length) return items
     const { data: funcs } = await supabase
@@ -108,6 +111,7 @@ export function useFerias() {
     const nameMap = new Map((funcs || []).map((f: { id: string; nome_completo: string }) => [f.id, f.nome_completo]))
     return items.map(f => ({
       ...f,
+      nome_completo: nameMap.get(f.funcionario_id!) || f.nome_completo || f.nome || 'Sem nome',
       nome: nameMap.get(f.funcionario_id!) || f.nome || 'Sem nome',
     }))
   }, [])
@@ -381,13 +385,20 @@ export function useFerias() {
 
   const loadExtrato = useCallback(async (funcionarioId: string) => {
     try {
+      // TAREFA 4a: Use RPC fn_extrato_ferias - already ordered by data DESC
       const { data, error } = await supabase
-        .from('vw_ferias_extrato')
-        .select('*')
-        .eq('funcionario_id', funcionarioId)
-        .order('data_movimento', { ascending: false })
+        .rpc('fn_extrato_ferias', { p_funcionario_id: funcionarioId })
 
-      if (error) throw error
+      if (error) {
+        // Fallback to view if RPC not available
+        const { data: viewData, error: viewError } = await supabase
+          .from('vw_ferias_extrato')
+          .select('*')
+          .eq('funcionario_id', funcionarioId)
+          .order('data_movimento', { ascending: false })
+        if (viewError) throw viewError
+        return (viewData || []) as FeriasExtrato[]
+      }
       return (data || []) as FeriasExtrato[]
     } catch (err) {
       console.error('Erro ao carregar extrato:', err)
@@ -397,13 +408,20 @@ export function useFerias() {
 
   const loadSaldos = useCallback(async (funcionarioId: string) => {
     try {
+      // TAREFA 4b: Use RPC fn_resumo_periodos_ferias
       const { data, error } = await supabase
-        .from('ferias_saldo')
-        .select('*')
-        .eq('funcionario_id', funcionarioId)
-        .order('periodo_aquisitivo_inicio', { ascending: false })
+        .rpc('fn_resumo_periodos_ferias', { p_funcionario_id: funcionarioId })
 
-      if (error) throw error
+      if (error) {
+        // Fallback to direct table query if RPC not available
+        const { data: tableData, error: tableError } = await supabase
+          .from('ferias_saldo')
+          .select('*')
+          .eq('funcionario_id', funcionarioId)
+          .order('periodo_aquisitivo_inicio', { ascending: false })
+        if (tableError) throw tableError
+        return (tableData || []) as FeriasSaldo[]
+      }
       return (data || []) as FeriasSaldo[]
     } catch (err) {
       console.error('Erro ao carregar saldos:', err)
