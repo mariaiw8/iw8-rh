@@ -201,6 +201,27 @@ export function useOcorrencias() {
     }
   }, [])
 
+
+  async function ajustarSaldoFerias(feriasSaldoId: string, deltaDias: number) {
+    if (!feriasSaldoId || !deltaDias) return
+
+    const { data: saldo, error: saldoError } = await supabase
+      .from('ferias_saldo')
+      .select('dias_gozados')
+      .eq('id', feriasSaldoId)
+      .single()
+
+    if (saldoError) throw saldoError
+
+    const novoGozado = Math.max(0, (saldo?.dias_gozados || 0) + deltaDias)
+    const { error: updateError } = await supabase
+      .from('ferias_saldo')
+      .update({ dias_gozados: novoGozado })
+      .eq('id', feriasSaldoId)
+
+    if (updateError) throw updateError
+  }
+
   // Helper to manage financial transaction for an ocorrencia
   async function syncTransacao(ocorrencia: { id: string; funcionario_id: string; valor?: number | null; data_inicio: string; descricao?: string; tipo_ocorrencia_id: string }) {
     const valor = ocorrencia.valor || 0
@@ -279,6 +300,10 @@ export function useOcorrencias() {
 
       if (error) throw error
 
+      if (payload.descontar_ferias && payload.ferias_saldo_id && (payload.dias || 0) > 0) {
+        await ajustarSaldoFerias(payload.ferias_saldo_id, payload.dias || 0)
+      }
+
       // If has value, create financial transaction
       if (data && payload.valor && payload.valor > 0) {
         await syncTransacao({
@@ -302,6 +327,14 @@ export function useOcorrencias() {
 
   const updateOcorrencia = useCallback(async (id: string, payload: Partial<Ocorrencia>) => {
     try {
+      const { data: anterior, error: fetchError } = await supabase
+        .from('ocorrencias')
+        .select('funcionario_id, tipo_ocorrencia_id, data_inicio, dias, valor, descricao, descontar_ferias, ferias_saldo_id')
+        .eq('id', id)
+        .single()
+
+      if (fetchError) throw fetchError
+
       const { error } = await supabase
         .from('ocorrencias')
         .update(payload)
@@ -309,15 +342,27 @@ export function useOcorrencias() {
 
       if (error) throw error
 
+      const depois = {
+        ...anterior,
+        ...payload,
+      } as Ocorrencia
+
+      if (anterior.descontar_ferias && anterior.ferias_saldo_id && (anterior.dias || 0) > 0) {
+        await ajustarSaldoFerias(anterior.ferias_saldo_id, -(anterior.dias || 0))
+      }
+      if (depois.descontar_ferias && depois.ferias_saldo_id && (depois.dias || 0) > 0) {
+        await ajustarSaldoFerias(depois.ferias_saldo_id, depois.dias || 0)
+      }
+
       // Sync financial transaction
-      if (payload.funcionario_id && payload.data_inicio && payload.tipo_ocorrencia_id) {
+      if (depois.funcionario_id && depois.data_inicio && depois.tipo_ocorrencia_id) {
         await syncTransacao({
           id,
-          funcionario_id: payload.funcionario_id,
-          valor: payload.valor,
-          data_inicio: payload.data_inicio,
-          descricao: payload.descricao,
-          tipo_ocorrencia_id: payload.tipo_ocorrencia_id,
+          funcionario_id: depois.funcionario_id,
+          valor: depois.valor,
+          data_inicio: depois.data_inicio,
+          descricao: depois.descricao,
+          tipo_ocorrencia_id: depois.tipo_ocorrencia_id,
         })
       }
 
@@ -332,6 +377,18 @@ export function useOcorrencias() {
 
   const deleteOcorrencia = useCallback(async (id: string) => {
     try {
+      const { data: ocorrencia, error: fetchError } = await supabase
+        .from('ocorrencias')
+        .select('dias, descontar_ferias, ferias_saldo_id')
+        .eq('id', id)
+        .single()
+
+      if (fetchError) throw fetchError
+
+      if (ocorrencia?.descontar_ferias && ocorrencia?.ferias_saldo_id && (ocorrencia?.dias || 0) > 0) {
+        await ajustarSaldoFerias(ocorrencia.ferias_saldo_id, -(ocorrencia.dias || 0))
+      }
+
       // Delete linked transaction first
       await supabase.from('transacoes').delete().eq('origem_tabela', 'ocorrencias').eq('origem_id', id)
 

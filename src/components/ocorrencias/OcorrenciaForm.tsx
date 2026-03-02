@@ -127,6 +127,7 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.funcionario_id || !form.tipo_ocorrencia_id || !form.data_inicio) return
+    if (form.descontar_ferias && !form.ferias_saldo_id) return
     setSubmitting(true)
     try {
       await onSubmit(form)
@@ -277,7 +278,10 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
 
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={submitting || !form.funcionario_id || !form.tipo_ocorrencia_id || !form.data_inicio}>
+          <Button
+            type="submit"
+            disabled={submitting || !form.funcionario_id || !form.tipo_ocorrencia_id || !form.data_inicio || (form.descontar_ferias && !form.ferias_saldo_id)}
+          >
             {submitting ? 'Salvando...' : 'Registrar'}
           </Button>
         </div>
