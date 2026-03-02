@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/Input'
 import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from '@/components/ui/Table'
 import { Pencil, Check, X } from 'lucide-react'
 import type { FeriasSaldo } from '@/hooks/useFerias'
-import { format } from 'date-fns'
+import { formatDateSafe } from '@/lib/dateUtils'
 
 interface SaldoFeriasProps {
   saldos: FeriasSaldo[]
@@ -18,6 +18,7 @@ interface SaldoFeriasProps {
 function getStatusVariant(status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
   switch (status) {
     case 'Disponivel': return 'success'
+    case 'Disponível': return 'success'
     case 'Parcial': return 'warning'
     case 'Gozado': return 'neutral'
     case 'Vencido': return 'danger'
@@ -76,7 +77,7 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
               saldos.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
-                    {format(new Date(s.periodo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} - {format(new Date(s.periodo_fim + 'T00:00:00'), 'dd/MM/yyyy')}
+                    {formatDateSafe(s.periodo_inicio)} - {formatDateSafe(s.periodo_fim)}
                   </TableCell>
                   <TableCell>
                     {editingId === s.id ? (
@@ -97,7 +98,7 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
                   <TableCell>{s.dias_gozados}</TableCell>
                   <TableCell>{s.dias_vendidos}</TableCell>
                   <TableCell className="font-medium">{s.dias_restantes}</TableCell>
-                  <TableCell>{format(new Date(s.data_vencimento + 'T00:00:00'), 'dd/MM/yyyy')}</TableCell>
+                  <TableCell>{formatDateSafe(s.data_vencimento)}</TableCell>
                   <TableCell>
                     <Badge variant={getStatusVariant(s.status)}>{s.status}</Badge>
                   </TableCell>

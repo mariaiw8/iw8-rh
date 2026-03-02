@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/Select'
 import { Autocomplete } from '@/components/ui/Autocomplete'
 import { createClient } from '@/lib/supabase'
 import { type FeriasSaldo } from '@/hooks/useFerias'
-import { differenceInCalendarDays, format } from 'date-fns'
+import { formatDateSafe, safeDifferenceInDays } from '@/lib/dateUtils'
 
 interface FeriasFormProps {
   open: boolean
@@ -67,10 +67,7 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
 
   useEffect(() => {
     if (form.data_inicio && form.data_fim) {
-      const dias = differenceInCalendarDays(
-        new Date(form.data_fim + 'T00:00:00'),
-        new Date(form.data_inicio + 'T00:00:00')
-      ) + 1
+      const dias = safeDifferenceInDays(form.data_fim, form.data_inicio) + 1
       setForm((prev) => ({ ...prev, dias: dias > 0 ? dias : 0 }))
     }
   }, [form.data_inicio, form.data_fim])
@@ -99,21 +96,32 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
     setFuncionarios(
       (data || []).map((f: Record<string, string>) => ({
         value: f.id,
-        label: f.nome_completo || f.nome,
+        label: f.nome_completo,
         sublabel: f.codigo ? `Cod: ${f.codigo}` : '',
       }))
     )
   }
 
   async function loadPeriodosDisponiveis(funcId: string) {
-    const { data } = await supabase
-      .from('ferias_saldo')
-      .select('*')
-      .eq('funcionario_id', funcId)
-      .in('status', ['Disponível', 'Parcial'])
-      .order('periodo_aquisitivo_inicio')
+    // TAREFA 3a: Load periods via RPC
+    const { data, error } = await supabase
+      .rpc('fn_resumo_periodos_ferias', { p_funcionario_id: funcId })
 
-    setPeriodosDisponiveis((data || []) as FeriasSaldo[])
+    if (error) {
+      // Fallback to direct table query
+      const { data: fallbackData } = await supabase
+        .from('ferias_saldo')
+        .select('*')
+        .eq('funcionario_id', funcId)
+        .in('status', ['Disponível', 'Parcial'])
+        .order('periodo_aquisitivo_inicio')
+      setPeriodosDisponiveis(((fallbackData || []) as FeriasSaldo[]).filter(p => (p.dias_restantes ?? 0) > 0))
+      return
+    }
+
+    // TAREFA 3b: Filter only periods with dias_restantes > 0
+    const periodos = ((data || []) as FeriasSaldo[]).filter(p => (p.dias_restantes ?? 0) > 0)
+    setPeriodosDisponiveis(periodos)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -196,18 +204,20 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
           />
         </div>
 
+        {/* TAREFA 3c: Show "DD/MM/YYYY a DD/MM/YYYY — XX dias disponíveis" */}
         <Select
           label="Periodo Aquisitivo *"
           value={form.ferias_saldo_id || ''}
           onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value })}
           options={periodosDisponiveis.map((p) => ({
             value: p.id,
-            label: `${format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')} — ${p.dias_restantes} dias disponiveis`,
+            label: `${formatDateSafe(p.periodo_aquisitivo_inicio)} a ${formatDateSafe(p.periodo_aquisitivo_fim)} — ${p.dias_restantes ?? 0} dias disponiveis`,
           }))}
           placeholder={periodosDisponiveis.length === 0 ? 'Nenhum periodo disponivel' : 'Selecione o periodo'}
           error={validationError || undefined}
         />
 
+        {/* TAREFA 7: Abono pecuniário with period selection */}
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-2 text-sm text-cinza-preto">
             <input
@@ -220,7 +230,7 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
           </label>
           {form.abono_pecuniario && (
             <Input
-              label="Dias Vendidos (max 10)"
+              label="Dias Vendidos (max 10 - Art. 143 CLT)"
               type="number"
               value={form.dias_vendidos.toString()}
               onChange={(e) => {
