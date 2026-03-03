@@ -3,6 +3,29 @@ import type { AlocacaoInput, Ferias, FeriasPeriodoSaldo, FeriasTipo, FeriasAloca
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+function normalizarAlocacoes(data: unknown): FeriasAlocacaoRow[] {
+  const rows = Array.isArray(data) ? data : [];
+  return rows.map((row) => {
+    const registro = row as { dias?: number; ferias_periodos?: unknown };
+    const periodoRaw = Array.isArray(registro.ferias_periodos)
+      ? registro.ferias_periodos[0]
+      : registro.ferias_periodos;
+
+    const periodo = periodoRaw
+      ? (periodoRaw as {
+          data_vencimento: string;
+          aquisitivo_inicio: string;
+          aquisitivo_fim: string;
+        })
+      : null;
+
+    return {
+      dias: Number(registro.dias ?? 0),
+      ferias_periodos: periodo,
+    };
+  });
+}
+
 export async function listarPeriodosComSaldo(funcionarioId: string): Promise<FeriasPeriodoSaldo[]> {
   const { data, error } = await supabase
     .from('v_ferias_periodos_saldo')
@@ -83,7 +106,7 @@ export async function buscarAlocacoes(feriasId: string): Promise<FeriasAlocacaoR
     .order('ferias_periodos.data_vencimento', { ascending: true });
 
   if (error) throw error;
-  return (data ?? []) as FeriasAlocacaoRow[];
+  return normalizarAlocacoes(data);
 }
 
 export async function buscarAlocacoesVenda(feriasId: string): Promise<FeriasAlocacaoRow[]> {
@@ -94,7 +117,7 @@ export async function buscarAlocacoesVenda(feriasId: string): Promise<FeriasAloc
     .order('ferias_periodos.data_vencimento', { ascending: true });
 
   if (error) throw error;
-  return (data ?? []) as FeriasAlocacaoRow[];
+  return normalizarAlocacoes(data);
 }
 
 export async function listarFeriasFuncionario(funcionarioId: string): Promise<Ferias[]> {

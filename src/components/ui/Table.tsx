@@ -1,4 +1,4 @@
-import { ReactNode } from 'react'
+import { ReactNode, TdHTMLAttributes, ThHTMLAttributes } from 'react'
 
 interface TableProps {
   children: ReactNode
@@ -25,9 +25,13 @@ export function TableHeader({ children }: { children: ReactNode }) {
   )
 }
 
-export function TableHead({ children, className = '' }: { children?: ReactNode; className?: string }) {
+type TableHeadProps = ThHTMLAttributes<HTMLTableCellElement> & {
+  children?: ReactNode
+}
+
+export function TableHead({ children, className = '', ...props }: TableHeadProps) {
   return (
-    <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${className}`}>
+    <th className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${className}`} {...props}>
       {children}
     </th>
   )
@@ -48,9 +52,13 @@ export function TableRow({ children, className = '', onClick }: { children: Reac
   )
 }
 
-export function TableCell({ children, className = '' }: { children: ReactNode; className?: string }) {
+type TableCellProps = TdHTMLAttributes<HTMLTableCellElement> & {
+  children: ReactNode
+}
+
+export function TableCell({ children, className = '', ...props }: TableCellProps) {
   return (
-    <td className={`px-4 py-3 text-cinza-preto ${className}`}>
+    <td className={`px-4 py-3 text-cinza-preto ${className}`} {...props}>
       {children}
     </td>
   )
