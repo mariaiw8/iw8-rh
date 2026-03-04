@@ -154,11 +154,13 @@ CREATE TRIGGER trg_ferias_status_ledger
   EXECUTE FUNCTION fn_ferias_status_ledger();
 
 -- ============================================================================
--- 4. RECRIAR/ATUALIZAR a view v_ferias_periodos_saldo
+-- 4. RECRIAR a view v_ferias_periodos_saldo
 --    Calcula saldo baseado no ledger de movimentações.
+--    DROP necessário porque as colunas mudaram de nome/ordem.
 -- ============================================================================
 
-CREATE OR REPLACE VIEW v_ferias_periodos_saldo AS
+DROP VIEW IF EXISTS v_ferias_periodos_saldo;
+CREATE VIEW v_ferias_periodos_saldo AS
 SELECT
   fp.id,
   fp.funcionario_id,
