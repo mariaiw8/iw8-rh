@@ -8,7 +8,7 @@ import { Select } from '@/components/ui/Select'
 import { Autocomplete } from '@/components/ui/Autocomplete'
 import { createClient } from '@/lib/supabase'
 import { useOcorrencias, type TipoOcorrencia } from '@/hooks/useOcorrencias'
-import { type FeriasSaldo } from '@/hooks/useFerias'
+import type { FeriasPeriodoSaldo } from '@/types/ferias'
 import { Upload } from 'lucide-react'
 import { differenceInCalendarDays, format } from 'date-fns'
 
@@ -42,7 +42,7 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [funcionarios, setFuncionarios] = useState<{ value: string; label: string; sublabel: string }[]>([])
-  const [periodosDisponiveis, setPeriodosDisponiveis] = useState<FeriasSaldo[]>([])
+  const [periodosDisponiveis, setPeriodosDisponiveis] = useState<FeriasPeriodoSaldo[]>([])
 
   const [form, setForm] = useState<OcorrenciaFormData>({
     funcionario_id: funcionarioId || '',
@@ -75,13 +75,13 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
 
   async function loadPeriodosDisponiveis(funcId: string) {
     const { data } = await supabase
-      .from('ferias_saldo')
+      .from('v_ferias_periodos_saldo')
       .select('*')
       .eq('funcionario_id', funcId)
-      .in('status', ['Disponível', 'Parcial'])
-      .order('periodo_aquisitivo_inicio')
+      .in('status_calculado', ['Disponível', 'Parcial'])
+      .order('aquisitivo_inicio')
 
-    setPeriodosDisponiveis((data || []) as FeriasSaldo[])
+    setPeriodosDisponiveis((data || []) as FeriasPeriodoSaldo[])
   }
 
   useEffect(() => {
@@ -258,7 +258,7 @@ export function OcorrenciaForm({ open, onClose, onSubmit, funcionarioId, funcion
               onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value || null })}
               options={periodosDisponiveis.map((p) => ({
                 value: p.id,
-                label: `${format(new Date(p.periodo_aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(p.periodo_aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')} (${p.dias_restantes} dias restantes)`,
+                label: `${format(new Date(p.aquisitivo_inicio + 'T00:00:00'), 'dd/MM/yyyy')} a ${format(new Date(p.aquisitivo_fim + 'T00:00:00'), 'dd/MM/yyyy')} (${p.dias_restantes} dias restantes)`,
               }))}
               placeholder="Selecione o periodo"
             />

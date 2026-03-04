@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from '@/components/ui/Table'
 import { Pencil, Check, X } from 'lucide-react'
-import type { FeriasSaldo } from '@/hooks/useFerias'
+import type { FeriasPeriodoSaldo } from '@/types/ferias'
 import { formatDateSafe } from '@/lib/dateUtils'
 
 interface SaldoFeriasProps {
-  saldos: FeriasSaldo[]
+  saldos: FeriasPeriodoSaldo[]
   onUpdateDireito: (saldoId: string, dias: number) => Promise<boolean>
 }
 
@@ -59,8 +59,7 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
           <TableHeader>
             <TableHead>Periodo</TableHead>
             <TableHead>Dias Direito</TableHead>
-            <TableHead>Gozados</TableHead>
-            <TableHead>Vendidos</TableHead>
+            <TableHead>Debitos</TableHead>
             <TableHead>Restantes</TableHead>
             <TableHead>Vencimento</TableHead>
             <TableHead>Status</TableHead>
@@ -69,7 +68,7 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
           <TableBody>
             {saldos.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-6 text-center text-sm text-cinza-estrutural">
+                <td colSpan={7} className="px-4 py-6 text-center text-sm text-cinza-estrutural">
                   Nenhum periodo aquisitivo encontrado
                 </td>
               </tr>
@@ -77,7 +76,7 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
               saldos.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
-                    {formatDateSafe(s.periodo_inicio)} - {formatDateSafe(s.periodo_fim)}
+                    {formatDateSafe(s.aquisitivo_inicio)} - {formatDateSafe(s.aquisitivo_fim)}
                   </TableCell>
                   <TableCell>
                     {editingId === s.id ? (
@@ -95,12 +94,11 @@ export function SaldoFerias({ saldos, onUpdateDireito }: SaldoFeriasProps) {
                       s.dias_direito
                     )}
                   </TableCell>
-                  <TableCell>{s.dias_gozados}</TableCell>
-                  <TableCell>{s.dias_vendidos}</TableCell>
+                  <TableCell>{s.debitos}</TableCell>
                   <TableCell className="font-medium">{s.dias_restantes}</TableCell>
                   <TableCell>{formatDateSafe(s.data_vencimento)}</TableCell>
                   <TableCell>
-                    <Badge variant={getStatusVariant(s.status)}>{s.status}</Badge>
+                    <Badge variant={getStatusVariant(s.status_calculado)}>{s.status_calculado}</Badge>
                   </TableCell>
                   <TableCell>
                     {editingId !== s.id && (
