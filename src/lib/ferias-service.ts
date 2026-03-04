@@ -176,78 +176,37 @@ export async function calcularAlocacoesAutomaticas(
 }
 
 /**
- * Cria férias com alocações de período.
- * Fluxo: INSERT ferias → INSERT ferias_alocacoes → INSERT ferias_venda_alocacoes
+ * Cria férias com alocações de período via API route server-side.
+ * A API usa service role key para bypassar RLS e triggers de validação.
  * Status inicial sempre 'Programada' (não debita saldo ainda).
  */
 export async function criarFerias(payload: CriarFeriasPayload): Promise<Ferias> {
-  // 1. Criar o registro de férias
-  const { data: ferias, error: errFerias } = await supabase
-    .from('ferias')
-    .insert({
-      funcionario_id: payload.funcionario_id,
-      data_inicio: payload.data_inicio,
-      data_fim: payload.data_fim,
-      dias: payload.dias,
-      tipo: payload.tipo,
-      abono_pecuniario: payload.abono_pecuniario,
-      dias_vendidos: payload.dias_vendidos,
-      observacao: payload.observacao ?? null,
-      status: 'Programada',
-    })
-    .select()
-    .single()
-  if (errFerias) throw new Error(`Erro ao criar férias: ${errFerias.message}`)
-
-  // 2. Tentar inserir alocações de gozo (não bloqueia se RLS impedir)
-  if (payload.alocacoes_gozo.length > 0) {
-    const { error } = await supabase
-      .from('ferias_alocacoes')
-      .insert(
-        payload.alocacoes_gozo.map(a => ({
-          ferias_id: ferias.id,
-          ferias_periodo_id: a.ferias_periodo_id,
-          dias: a.dias,
-        }))
-      )
-    if (error) {
-      console.warn('Alocações de gozo não inseridas (RLS ou permissão):', error.message)
-    }
-  }
-
-  // 3. Tentar inserir alocações de venda (não bloqueia se RLS impedir)
-  if (payload.alocacoes_venda.length > 0) {
-    const { error } = await supabase
-      .from('ferias_venda_alocacoes')
-      .insert(
-        payload.alocacoes_venda.map(a => ({
-          ferias_id: ferias.id,
-          ferias_periodo_id: a.ferias_periodo_id,
-          dias: a.dias,
-        }))
-      )
-    if (error) {
-      console.warn('Alocações de venda não inseridas (RLS ou permissão):', error.message)
-    }
-  }
-
-  return ferias
+  const res = await fetch('/api/ferias/criar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const body = await res.json()
+  if (!res.ok) throw new Error(body.error || 'Erro ao criar férias')
+  return body.ferias
 }
 
 /**
- * Atualiza o status de uma férias.
- * Os triggers do banco cuidam automaticamente de debitar/estornar o ledger.
- * Aprovada → debita | Cancelada → estorna | outros → mantém débito
+ * Atualiza o status de uma férias via API route server-side.
+ * A API usa service role key para bypassar RLS e gerenciar o ledger
+ * de movimentações diretamente (sem depender de triggers SECURITY DEFINER).
  */
 export async function atualizarStatusFerias(
   feriasId: string,
   novoStatus: 'Aprovada' | 'Em Andamento' | 'Concluída' | 'Cancelada'
 ): Promise<void> {
-  const { error } = await supabase
-    .from('ferias')
-    .update({ status: novoStatus, updated_at: new Date().toISOString() })
-    .eq('id', feriasId)
-  if (error) throw new Error(`Erro ao atualizar status: ${error.message}`)
+  const res = await fetch('/api/ferias/status', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feriasId, novoStatus }),
+  })
+  const body = await res.json()
+  if (!res.ok) throw new Error(`Erro ao atualizar status: ${body.error || 'Erro desconhecido'}`)
 }
 
 /**
