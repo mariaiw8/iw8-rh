@@ -176,6 +176,7 @@ SET search_path = public
 AS $$
 DECLARE
   v_alocacao RECORD;
+  v_ja_existe BOOLEAN;
 BEGIN
   -- Só atua quando o status realmente muda
   IF OLD.status = NEW.status THEN
@@ -184,47 +185,68 @@ BEGIN
 
   -- ── Aprovada → debita saldo (gozo + venda) ──
   IF NEW.status = 'Aprovada' THEN
-    -- Débitos de gozo
-    FOR v_alocacao IN
-      SELECT ferias_periodo_id, dias
-      FROM ferias_alocacoes
-      WHERE ferias_id = NEW.id
-    LOOP
-      INSERT INTO ferias_movimentacoes
-        (ferias_periodo_id, data, natureza, tipo, dias, origem_tabela, origem_id, observacao)
-      VALUES
-        (v_alocacao.ferias_periodo_id, now()::date, 'Débito', 'Gozo', v_alocacao.dias,
-         'ferias', NEW.id, 'Aprovação de férias');
-    END LOOP;
-
-    -- Débitos de venda/abono
-    FOR v_alocacao IN
-      SELECT ferias_periodo_id, dias
-      FROM ferias_venda_alocacoes
-      WHERE ferias_id = NEW.id
-    LOOP
-      INSERT INTO ferias_movimentacoes
-        (ferias_periodo_id, data, natureza, tipo, dias, origem_tabela, origem_id, observacao)
-      VALUES
-        (v_alocacao.ferias_periodo_id, now()::date, 'Débito', 'Venda/Abono', v_alocacao.dias,
-         'ferias', NEW.id, 'Abono pecuniário aprovado');
-    END LOOP;
-
-  -- ── Cancelada → estorna débitos anteriores ──
-  ELSIF NEW.status = 'Cancelada' THEN
-    FOR v_alocacao IN
-      SELECT ferias_periodo_id, dias, tipo
-      FROM ferias_movimentacoes
+    -- Verifica se já existem débitos para esta férias (evita duplicação)
+    SELECT EXISTS(
+      SELECT 1 FROM ferias_movimentacoes
       WHERE origem_tabela = 'ferias'
         AND origem_id = NEW.id
         AND natureza = 'Débito'
-    LOOP
-      INSERT INTO ferias_movimentacoes
-        (ferias_periodo_id, data, natureza, tipo, dias, origem_tabela, origem_id, observacao)
-      VALUES
-        (v_alocacao.ferias_periodo_id, now()::date, 'Crédito', 'Estorno', v_alocacao.dias,
-         'ferias', NEW.id, 'Estorno por cancelamento');
-    END LOOP;
+    ) INTO v_ja_existe;
+
+    IF NOT v_ja_existe THEN
+      -- Débitos de gozo
+      FOR v_alocacao IN
+        SELECT ferias_periodo_id, dias
+        FROM ferias_alocacoes
+        WHERE ferias_id = NEW.id
+      LOOP
+        INSERT INTO ferias_movimentacoes
+          (ferias_periodo_id, data, natureza, tipo, dias, origem_tabela, origem_id, observacao)
+        VALUES
+          (v_alocacao.ferias_periodo_id, now()::date, 'Débito', 'Gozo', v_alocacao.dias,
+           'ferias', NEW.id, 'Aprovação de férias');
+      END LOOP;
+
+      -- Débitos de venda/abono
+      FOR v_alocacao IN
+        SELECT ferias_periodo_id, dias
+        FROM ferias_venda_alocacoes
+        WHERE ferias_id = NEW.id
+      LOOP
+        INSERT INTO ferias_movimentacoes
+          (ferias_periodo_id, data, natureza, tipo, dias, origem_tabela, origem_id, observacao)
+        VALUES
+          (v_alocacao.ferias_periodo_id, now()::date, 'Débito', 'Venda/Abono', v_alocacao.dias,
+           'ferias', NEW.id, 'Abono pecuniário aprovado');
+      END LOOP;
+    END IF;
+
+  -- ── Cancelada → estorna débitos anteriores ──
+  ELSIF NEW.status = 'Cancelada' THEN
+    -- Verifica se já foi estornado (evita duplicação)
+    SELECT EXISTS(
+      SELECT 1 FROM ferias_movimentacoes
+      WHERE origem_tabela = 'ferias'
+        AND origem_id = NEW.id
+        AND natureza = 'Crédito'
+        AND tipo = 'Estorno'
+    ) INTO v_ja_existe;
+
+    IF NOT v_ja_existe THEN
+      FOR v_alocacao IN
+        SELECT ferias_periodo_id, dias, tipo
+        FROM ferias_movimentacoes
+        WHERE origem_tabela = 'ferias'
+          AND origem_id = NEW.id
+          AND natureza = 'Débito'
+      LOOP
+        INSERT INTO ferias_movimentacoes
+          (ferias_periodo_id, data, natureza, tipo, dias, origem_tabela, origem_id, observacao)
+        VALUES
+          (v_alocacao.ferias_periodo_id, now()::date, 'Crédito', 'Estorno', v_alocacao.dias,
+           'ferias', NEW.id, 'Estorno por cancelamento');
+      END LOOP;
+    END IF;
   END IF;
 
   RETURN NEW;
