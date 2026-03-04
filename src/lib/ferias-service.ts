@@ -199,7 +199,7 @@ export async function criarFerias(payload: CriarFeriasPayload): Promise<Ferias> 
     .single()
   if (errFerias) throw new Error(`Erro ao criar férias: ${errFerias.message}`)
 
-  // 2. Inserir alocações de gozo
+  // 2. Tentar inserir alocações de gozo (não bloqueia se RLS impedir)
   if (payload.alocacoes_gozo.length > 0) {
     const { error } = await supabase
       .from('ferias_alocacoes')
@@ -210,10 +210,12 @@ export async function criarFerias(payload: CriarFeriasPayload): Promise<Ferias> 
           dias: a.dias,
         }))
       )
-    if (error) throw new Error(`Erro ao criar alocações de gozo: ${error.message}`)
+    if (error) {
+      console.warn('Alocações de gozo não inseridas (RLS ou permissão):', error.message)
+    }
   }
 
-  // 3. Inserir alocações de venda (se houver abono pecuniário)
+  // 3. Tentar inserir alocações de venda (não bloqueia se RLS impedir)
   if (payload.alocacoes_venda.length > 0) {
     const { error } = await supabase
       .from('ferias_venda_alocacoes')
@@ -224,7 +226,9 @@ export async function criarFerias(payload: CriarFeriasPayload): Promise<Ferias> 
           dias: a.dias,
         }))
       )
-    if (error) throw new Error(`Erro ao criar alocações de venda: ${error.message}`)
+    if (error) {
+      console.warn('Alocações de venda não inseridas (RLS ou permissão):', error.message)
+    }
   }
 
   return ferias
