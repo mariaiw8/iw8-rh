@@ -58,7 +58,112 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- 3. FIX: Recriar trigger function como SECURITY DEFINER
+-- 3. FIX: Remover/corrigir constraint que exige SUM(gozo) = ferias.dias
+--    A constraint antiga bloqueia venda de férias (abono pecuniário) porque
+--    gozo=0, mas a validação correta é: gozo = dias - dias_vendidos.
+--    Procura e remove triggers de validação de alocação que causam o erro.
+-- ============================================================================
+
+-- Remove triggers de validação de alocação que possam existir
+DO $$
+DECLARE
+  v_trig RECORD;
+BEGIN
+  -- Procura triggers na tabela ferias_alocacoes que fazem validação de soma
+  FOR v_trig IN
+    SELECT tgname FROM pg_trigger
+    WHERE tgrelid = 'ferias_alocacoes'::regclass
+      AND NOT tgisinternal
+  LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS %I ON ferias_alocacoes', v_trig.tgname);
+  END LOOP;
+
+  -- Procura triggers na tabela ferias_venda_alocacoes
+  FOR v_trig IN
+    SELECT tgname FROM pg_trigger
+    WHERE tgrelid = 'ferias_venda_alocacoes'::regclass
+      AND NOT tgisinternal
+  LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS %I ON ferias_venda_alocacoes', v_trig.tgname);
+  END LOOP;
+END $$;
+
+-- Remove CHECK constraints que possam validar soma de alocações
+DO $$
+DECLARE
+  v_con RECORD;
+BEGIN
+  FOR v_con IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'ferias_alocacoes'::regclass AND contype = 'c'
+  LOOP
+    EXECUTE format('ALTER TABLE ferias_alocacoes DROP CONSTRAINT IF EXISTS %I', v_con.conname);
+  END LOOP;
+
+  FOR v_con IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'ferias_venda_alocacoes'::regclass AND contype = 'c'
+  LOOP
+    EXECUTE format('ALTER TABLE ferias_venda_alocacoes DROP CONSTRAINT IF EXISTS %I', v_con.conname);
+  END LOOP;
+END $$;
+
+-- Recria validação correta como trigger SECURITY DEFINER
+-- Regra: SUM(gozo.dias) deve = ferias.dias - ferias.dias_vendidos
+--        SUM(venda.dias) deve = ferias.dias_vendidos
+CREATE OR REPLACE FUNCTION fn_validar_alocacoes_ferias()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_ferias RECORD;
+  v_soma_gozo INT;
+  v_soma_venda INT;
+BEGIN
+  -- Determina ferias_id dependendo da tabela de origem
+  IF TG_TABLE_NAME = 'ferias_alocacoes' THEN
+    SELECT f.dias, f.dias_vendidos INTO v_ferias
+    FROM ferias f WHERE f.id = NEW.ferias_id;
+
+    SELECT COALESCE(SUM(dias), 0) INTO v_soma_gozo
+    FROM ferias_alocacoes WHERE ferias_id = NEW.ferias_id;
+
+    IF v_soma_gozo > (v_ferias.dias - v_ferias.dias_vendidos) THEN
+      RAISE EXCEPTION 'Alocações de gozo (%) excedem o limite de % dias (dias - dias_vendidos)',
+        v_soma_gozo, (v_ferias.dias - v_ferias.dias_vendidos);
+    END IF;
+
+  ELSIF TG_TABLE_NAME = 'ferias_venda_alocacoes' THEN
+    SELECT f.dias_vendidos INTO v_ferias
+    FROM ferias f WHERE f.id = NEW.ferias_id;
+
+    SELECT COALESCE(SUM(dias), 0) INTO v_soma_venda
+    FROM ferias_venda_alocacoes WHERE ferias_id = NEW.ferias_id;
+
+    IF v_soma_venda > v_ferias.dias_vendidos THEN
+      RAISE EXCEPTION 'Alocações de venda (%) excedem dias_vendidos (%)',
+        v_soma_venda, v_ferias.dias_vendidos;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_validar_alocacoes_gozo
+  AFTER INSERT OR UPDATE ON ferias_alocacoes
+  FOR EACH ROW
+  EXECUTE FUNCTION fn_validar_alocacoes_ferias();
+
+CREATE TRIGGER trg_validar_alocacoes_venda
+  AFTER INSERT OR UPDATE ON ferias_venda_alocacoes
+  FOR EACH ROW
+  EXECUTE FUNCTION fn_validar_alocacoes_ferias();
+
+-- ============================================================================
+-- 4. FIX: Recriar trigger de ledger como SECURITY DEFINER
 --    O trigger que insere movimentações ao mudar status precisa bypassar RLS,
 --    senão o INSERT na ferias_movimentacoes falha com "violates row-level security".
 -- ============================================================================
@@ -134,7 +239,7 @@ CREATE TRIGGER trg_ferias_status_ledger
   EXECUTE FUNCTION fn_ferias_status_ledger();
 
 -- ============================================================================
--- 4. FEATURE: Geração automática de períodos aquisitivos
+-- 5. FEATURE: Geração automática de períodos aquisitivos
 --    Cron/trigger que cria o próximo período quando o último vence.
 --    Considera apenas funcionários com data_admissao antes de 2026-02-01
 --    e gera períodos a partir de 02/2026 para não poluir a base.
@@ -243,13 +348,13 @@ CREATE TRIGGER trg_auto_proximo_periodo
   EXECUTE FUNCTION fn_auto_proximo_periodo();
 
 -- ============================================================================
--- 5. Executa a geração inicial para preencher períodos faltantes
+-- 6. Executa a geração inicial para preencher períodos faltantes
 --    (para funcionários que já têm períodos vencidos)
 -- ============================================================================
 SELECT fn_gerar_periodos_aquisitivos();
 
 -- ============================================================================
--- 6. (Opcional) Agendar via pg_cron para rodar diariamente
+-- 7. (Opcional) Agendar via pg_cron para rodar diariamente
 --    Descomente se pg_cron estiver habilitado no Supabase:
 -- ============================================================================
 -- SELECT cron.schedule(
