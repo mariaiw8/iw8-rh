@@ -4,8 +4,7 @@ import { createAdminClient } from '@/lib/supabase-admin'
 /**
  * PATCH /api/ferias/status
  * Atualiza o status de férias usando service role (bypassa RLS).
- * Gerencia o ledger de movimentações diretamente (sem depender de triggers).
- * Usa SQL raw para bypassar triggers de validação de saldo no banco.
+ * Ledger de movimentações é gerenciado pelo trigger fn_ferias_status_ledger no banco.
  */
 export async function PATCH(request: NextRequest) {
   try {
@@ -65,12 +64,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: `Erro ao atualizar: ${errUpdate.message}` }, { status: 500 })
     }
 
-    // Gerenciar ledger de movimentações (verifica se trigger já inseriu antes de duplicar)
-    if (novoStatus === 'Aprovada') {
-      await debitarLedgerSemDuplicar(admin, feriasId)
-    } else if (novoStatus === 'Cancelada') {
-      await estornarLedger(admin, feriasId)
-    }
+    // Ledger de movimentações é gerenciado pelo trigger fn_ferias_status_ledger no banco.
+    // NÃO inserir movimentações aqui para evitar duplicação.
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {
@@ -138,103 +133,3 @@ async function validarSaldoParaAprovacao(
   return { ok: true }
 }
 
-/**
- * Debita o saldo do ledger (gozo + venda) ao aprovar férias.
- * Verifica se o trigger do banco já inseriu as movimentações para evitar duplicação.
- */
-async function debitarLedgerSemDuplicar(admin: ReturnType<typeof createAdminClient>, feriasId: string) {
-  // Verifica se já existem movimentações para esta férias (inseridas pelo trigger do banco)
-  const { data: existentes } = await admin
-    .from('ferias_movimentacoes')
-    .select('id')
-    .eq('origem_tabela', 'ferias')
-    .eq('origem_id', feriasId)
-    .eq('natureza', 'Débito')
-    .limit(1)
-
-  if (existentes && existentes.length > 0) {
-    // Trigger do banco já inseriu — não duplicar
-    return
-  }
-
-  // Débitos de gozo
-  const { data: alocacoesGozo } = await admin
-    .from('ferias_alocacoes')
-    .select('ferias_periodo_id, dias')
-    .eq('ferias_id', feriasId)
-
-  if (alocacoesGozo && alocacoesGozo.length > 0) {
-    const movs = alocacoesGozo.map(a => ({
-      ferias_periodo_id: a.ferias_periodo_id,
-      data: new Date().toISOString().slice(0, 10),
-      natureza: 'Débito',
-      tipo: 'Gozo',
-      dias: a.dias,
-      origem_tabela: 'ferias',
-      origem_id: feriasId,
-      observacao: 'Aprovação de férias',
-    }))
-    const { error } = await admin.from('ferias_movimentacoes').insert(movs)
-    if (error) console.error('Erro ao inserir movimentações de gozo:', error.message)
-  }
-
-  // Débitos de venda/abono
-  const { data: alocacoesVenda } = await admin
-    .from('ferias_venda_alocacoes')
-    .select('ferias_periodo_id, dias')
-    .eq('ferias_id', feriasId)
-
-  if (alocacoesVenda && alocacoesVenda.length > 0) {
-    const movs = alocacoesVenda.map(a => ({
-      ferias_periodo_id: a.ferias_periodo_id,
-      data: new Date().toISOString().slice(0, 10),
-      natureza: 'Débito',
-      tipo: 'Venda/Abono',
-      dias: a.dias,
-      origem_tabela: 'ferias',
-      origem_id: feriasId,
-      observacao: 'Abono pecuniário aprovado',
-    }))
-    const { error } = await admin.from('ferias_movimentacoes').insert(movs)
-    if (error) console.error('Erro ao inserir movimentações de venda:', error.message)
-  }
-}
-
-/** Estorna débitos anteriores ao cancelar férias */
-async function estornarLedger(admin: ReturnType<typeof createAdminClient>, feriasId: string) {
-  const { data: debitos } = await admin
-    .from('ferias_movimentacoes')
-    .select('ferias_periodo_id, dias, tipo')
-    .eq('origem_tabela', 'ferias')
-    .eq('origem_id', feriasId)
-    .eq('natureza', 'Débito')
-
-  if (debitos && debitos.length > 0) {
-    // Verifica se já existe estorno
-    const { data: estornosExistentes } = await admin
-      .from('ferias_movimentacoes')
-      .select('id')
-      .eq('origem_tabela', 'ferias')
-      .eq('origem_id', feriasId)
-      .eq('natureza', 'Crédito')
-      .eq('tipo', 'Estorno')
-      .limit(1)
-
-    if (estornosExistentes && estornosExistentes.length > 0) {
-      return // Já estornado (pelo trigger do banco)
-    }
-
-    const estornos = debitos.map(d => ({
-      ferias_periodo_id: d.ferias_periodo_id,
-      data: new Date().toISOString().slice(0, 10),
-      natureza: 'Crédito',
-      tipo: 'Estorno',
-      dias: d.dias,
-      origem_tabela: 'ferias',
-      origem_id: feriasId,
-      observacao: 'Estorno por cancelamento',
-    }))
-    const { error } = await admin.from('ferias_movimentacoes').insert(estornos)
-    if (error) console.error('Erro ao estornar movimentações:', error.message)
-  }
-}
