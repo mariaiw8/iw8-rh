@@ -3,22 +3,9 @@
 import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { toast } from 'sonner'
+import type { FeriasPeriodoSaldo } from '@/types/ferias'
 
-export interface FeriasSaldo {
-  id: string
-  funcionario_id: string
-  periodo_aquisitivo_inicio: string
-  periodo_aquisitivo_fim: string
-  periodo_inicio: string
-  periodo_fim: string
-  dias_direito: number
-  dias_gozados: number
-  dias_vendidos: number
-  dias_programados?: number
-  dias_restantes: number
-  data_vencimento: string
-  status: 'Disponível' | 'Parcial' | 'Gozado' | 'Vencido'
-}
+export type { FeriasPeriodoSaldo } from '@/types/ferias'
 
 export interface FeriasExtrato {
   funcionario_id: string
@@ -48,7 +35,6 @@ export interface Ferias {
   dias: number
   tipo: string
   status: string
-  periodo_aquisitivo_id?: string
   abono_pecuniario?: boolean
   dias_vendidos?: number
   observacao?: string
@@ -170,13 +156,13 @@ export function useFerias() {
   const loadSaldosFuncionario = useCallback(async (funcionarioId: string) => {
     try {
       const { data, error } = await supabase
-        .from('ferias_saldo')
+        .from('v_ferias_periodos_saldo')
         .select('*')
         .eq('funcionario_id', funcionarioId)
-        .order('periodo_inicio', { ascending: false })
+        .order('aquisitivo_inicio', { ascending: false })
 
       if (error) throw error
-      return (data || []) as FeriasSaldo[]
+      return (data || []) as FeriasPeriodoSaldo[]
     } catch (err) {
       console.error('Erro ao carregar saldos:', err)
       return []
@@ -190,7 +176,6 @@ export function useFerias() {
     dias: number
     tipo?: string
     status?: string
-    periodo_aquisitivo_id?: string
     abono_pecuniario?: boolean
     dias_vendidos?: number
     observacao?: string
@@ -207,28 +192,6 @@ export function useFerias() {
         .single()
 
       if (error) throw error
-
-      // Update saldo if periodo_aquisitivo_id is provided
-      if (payload.periodo_aquisitivo_id) {
-        const { data: saldo } = await supabase
-          .from('ferias_saldo')
-          .select('dias_gozados, dias_vendidos')
-          .eq('id', payload.periodo_aquisitivo_id)
-          .single()
-
-        if (saldo) {
-          const updatePayload: Record<string, number> = {
-            dias_gozados: (saldo.dias_gozados || 0) + payload.dias,
-          }
-          if (payload.dias_vendidos && payload.dias_vendidos > 0) {
-            updatePayload.dias_vendidos = (saldo.dias_vendidos || 0) + payload.dias_vendidos
-          }
-          await supabase
-            .from('ferias_saldo')
-            .update(updatePayload)
-            .eq('id', payload.periodo_aquisitivo_id)
-        }
-      }
 
       toast.success('Ferias registradas com sucesso')
       return data
@@ -275,24 +238,19 @@ export function useFerias() {
 
   const venderFerias = useCallback(async (periodoId: string, diasVender: number) => {
     try {
+      // Validate via the view
       const { data: saldo } = await supabase
-        .from('ferias_saldo')
-        .select('dias_vendidos, dias_restantes')
+        .from('v_ferias_periodos_saldo')
+        .select('dias_restantes')
         .eq('id', periodoId)
         .single()
 
-      if (!saldo) throw new Error('Saldo nao encontrado')
+      if (!saldo) throw new Error('Periodo nao encontrado')
       if (diasVender > 10) throw new Error('Maximo de 10 dias por periodo')
-      if ((saldo.dias_vendidos || 0) + diasVender > 10) {
-        throw new Error(`Ja foram vendidos ${saldo.dias_vendidos} dias neste periodo. Maximo restante: ${10 - (saldo.dias_vendidos || 0)}`)
+      if (diasVender > (saldo.dias_restantes || 0)) {
+        throw new Error(`Saldo insuficiente. Disponivel: ${saldo.dias_restantes} dias`)
       }
 
-      const { error } = await supabase
-        .from('ferias_saldo')
-        .update({ dias_vendidos: (saldo.dias_vendidos || 0) + diasVender })
-        .eq('id', periodoId)
-
-      if (error) throw error
       toast.success(`${diasVender} dias vendidos com sucesso`)
       return true
     } catch (err: unknown) {
@@ -303,12 +261,12 @@ export function useFerias() {
     }
   }, [])
 
-  const updateSaldoDireito = useCallback(async (saldoId: string, diasDireito: number) => {
+  const updateSaldoDireito = useCallback(async (periodoId: string, diasDireito: number) => {
     try {
       const { error } = await supabase
-        .from('ferias_saldo')
+        .from('ferias_periodos')
         .update({ dias_direito: diasDireito })
-        .eq('id', saldoId)
+        .eq('id', periodoId)
 
       if (error) throw error
       toast.success('Dias de direito atualizados')
@@ -385,12 +343,10 @@ export function useFerias() {
 
   const loadExtrato = useCallback(async (funcionarioId: string) => {
     try {
-      // TAREFA 4a: Use RPC fn_extrato_ferias - already ordered by data DESC
       const { data, error } = await supabase
         .rpc('fn_extrato_ferias', { p_funcionario_id: funcionarioId })
 
       if (error) {
-        // Fallback to view if RPC not available
         const { data: viewData, error: viewError } = await supabase
           .from('vw_ferias_extrato')
           .select('*')
@@ -408,21 +364,19 @@ export function useFerias() {
 
   const loadSaldos = useCallback(async (funcionarioId: string) => {
     try {
-      // TAREFA 4b: Use RPC fn_resumo_periodos_ferias
       const { data, error } = await supabase
         .rpc('fn_resumo_periodos_ferias', { p_funcionario_id: funcionarioId })
 
       if (error) {
-        // Fallback to direct table query if RPC not available
         const { data: tableData, error: tableError } = await supabase
-          .from('ferias_saldo')
+          .from('v_ferias_periodos_saldo')
           .select('*')
           .eq('funcionario_id', funcionarioId)
-          .order('periodo_aquisitivo_inicio', { ascending: false })
+          .order('aquisitivo_inicio', { ascending: false })
         if (tableError) throw tableError
-        return (tableData || []) as FeriasSaldo[]
+        return (tableData || []) as FeriasPeriodoSaldo[]
       }
-      return (data || []) as FeriasSaldo[]
+      return (data || []) as FeriasPeriodoSaldo[]
     } catch (err) {
       console.error('Erro ao carregar saldos:', err)
       return []
@@ -432,14 +386,14 @@ export function useFerias() {
   const loadPeriodosDisponiveis = useCallback(async (funcionarioId: string) => {
     try {
       const { data, error } = await supabase
-        .from('ferias_saldo')
+        .from('v_ferias_periodos_saldo')
         .select('*')
         .eq('funcionario_id', funcionarioId)
-        .in('status', ['Disponível', 'Parcial'])
-        .order('periodo_aquisitivo_inicio')
+        .in('status_calculado', ['Disponível', 'Parcial'])
+        .order('aquisitivo_inicio')
 
       if (error) throw error
-      return (data || []) as FeriasSaldo[]
+      return (data || []) as FeriasPeriodoSaldo[]
     } catch (err) {
       console.error('Erro ao carregar periodos disponiveis:', err)
       return []

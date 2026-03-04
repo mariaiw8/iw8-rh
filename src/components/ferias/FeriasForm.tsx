@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Autocomplete } from '@/components/ui/Autocomplete'
 import { createClient } from '@/lib/supabase'
-import { type FeriasSaldo } from '@/hooks/useFerias'
+import type { FeriasPeriodoSaldo } from '@/types/ferias'
 import { formatDateSafe, safeDifferenceInDays } from '@/lib/dateUtils'
 
 interface FeriasFormProps {
@@ -25,7 +25,6 @@ export interface FeriasFormData {
   dias: number
   tipo: string
   periodo_aquisitivo_id?: string
-  ferias_saldo_id?: string
   abono_pecuniario: boolean
   dias_vendidos: number
   observacao: string
@@ -35,7 +34,7 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
   const supabase = createClient()
   const [submitting, setSubmitting] = useState(false)
   const [funcionarios, setFuncionarios] = useState<{ value: string; label: string; sublabel: string }[]>([])
-  const [periodosDisponiveis, setPeriodosDisponiveis] = useState<FeriasSaldo[]>([])
+  const [periodosDisponiveis, setPeriodosDisponiveis] = useState<FeriasPeriodoSaldo[]>([])
   const [validationError, setValidationError] = useState<string | null>(null)
 
   const [form, setForm] = useState<FeriasFormData>({
@@ -45,7 +44,6 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
     dias: 0,
     tipo: 'Individual',
     periodo_aquisitivo_id: '',
-    ferias_saldo_id: '',
     abono_pecuniario: false,
     dias_vendidos: 0,
     observacao: '',
@@ -74,8 +72,8 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
 
   // Validate dias against selected periodo
   useEffect(() => {
-    if (form.ferias_saldo_id && form.dias > 0) {
-      const periodo = periodosDisponiveis.find((p) => p.id === form.ferias_saldo_id)
+    if (form.periodo_aquisitivo_id && form.dias > 0) {
+      const periodo = periodosDisponiveis.find((p) => p.id === form.periodo_aquisitivo_id)
       if (periodo && form.dias > periodo.dias_restantes) {
         setValidationError(`Dias solicitados (${form.dias}) excedem os dias disponiveis (${periodo.dias_restantes}) do periodo selecionado`)
       } else {
@@ -84,7 +82,7 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
     } else {
       setValidationError(null)
     }
-  }, [form.ferias_saldo_id, form.dias, periodosDisponiveis])
+  }, [form.periodo_aquisitivo_id, form.dias, periodosDisponiveis])
 
   async function loadFuncionarios() {
     const { data } = await supabase
@@ -103,37 +101,32 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
   }
 
   async function loadPeriodosDisponiveis(funcId: string) {
-    // TAREFA 3a: Load periods via RPC
     const { data, error } = await supabase
       .rpc('fn_resumo_periodos_ferias', { p_funcionario_id: funcId })
 
     if (error) {
-      // Fallback to direct table query
+      // Fallback to view query
       const { data: fallbackData } = await supabase
-        .from('ferias_saldo')
+        .from('v_ferias_periodos_saldo')
         .select('*')
         .eq('funcionario_id', funcId)
-        .in('status', ['Disponível', 'Parcial'])
-        .order('periodo_aquisitivo_inicio')
-      setPeriodosDisponiveis(((fallbackData || []) as FeriasSaldo[]).filter(p => (p.dias_restantes ?? 0) > 0))
+        .in('status_calculado', ['Disponível', 'Parcial'])
+        .order('aquisitivo_inicio')
+      setPeriodosDisponiveis(((fallbackData || []) as FeriasPeriodoSaldo[]).filter(p => (p.dias_restantes ?? 0) > 0))
       return
     }
 
-    // TAREFA 3b: Filter only periods with dias_restantes > 0
-    const periodos = ((data || []) as FeriasSaldo[]).filter(p => (p.dias_restantes ?? 0) > 0)
+    const periodos = ((data || []) as FeriasPeriodoSaldo[]).filter(p => (p.dias_restantes ?? 0) > 0)
     setPeriodosDisponiveis(periodos)
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.funcionario_id || !form.data_inicio || !form.data_fim || !form.ferias_saldo_id) return
+    if (!form.funcionario_id || !form.data_inicio || !form.data_fim || !form.periodo_aquisitivo_id) return
     if (validationError) return
     setSubmitting(true)
     try {
-      await onSubmit({
-        ...form,
-        periodo_aquisitivo_id: form.ferias_saldo_id,
-      })
+      await onSubmit(form)
       setForm({
         funcionario_id: funcionarioId || '',
         data_inicio: '',
@@ -141,7 +134,6 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
         dias: 0,
         tipo: 'Individual',
         periodo_aquisitivo_id: '',
-        ferias_saldo_id: '',
         abono_pecuniario: false,
         dias_vendidos: 0,
         observacao: '',
@@ -204,20 +196,19 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
           />
         </div>
 
-        {/* TAREFA 3c: Show "DD/MM/YYYY a DD/MM/YYYY — XX dias disponíveis" */}
         <Select
           label="Periodo Aquisitivo *"
-          value={form.ferias_saldo_id || ''}
-          onChange={(e) => setForm({ ...form, ferias_saldo_id: e.target.value })}
+          value={form.periodo_aquisitivo_id || ''}
+          onChange={(e) => setForm({ ...form, periodo_aquisitivo_id: e.target.value })}
           options={periodosDisponiveis.map((p) => ({
             value: p.id,
-            label: `${formatDateSafe(p.periodo_aquisitivo_inicio)} a ${formatDateSafe(p.periodo_aquisitivo_fim)} — ${p.dias_restantes ?? 0} dias disponiveis`,
+            label: `${formatDateSafe(p.aquisitivo_inicio)} a ${formatDateSafe(p.aquisitivo_fim)} — ${p.dias_restantes ?? 0} dias disponiveis`,
           }))}
           placeholder={periodosDisponiveis.length === 0 ? 'Nenhum periodo disponivel' : 'Selecione o periodo'}
           error={validationError || undefined}
         />
 
-        {/* TAREFA 7: Abono pecuniário with period selection */}
+        {/* Abono pecuniário */}
         <div className="flex items-center gap-4">
           <label className="flex items-center gap-2 text-sm text-cinza-preto">
             <input
@@ -253,7 +244,7 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
 
         <div className="flex justify-end gap-3 pt-2">
           <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={submitting || !form.funcionario_id || !form.data_inicio || !form.data_fim || !form.ferias_saldo_id || !!validationError}>
+          <Button type="submit" disabled={submitting || !form.funcionario_id || !form.data_inicio || !form.data_fim || !form.periodo_aquisitivo_id || !!validationError}>
             {submitting ? 'Salvando...' : 'Salvar'}
           </Button>
         </div>

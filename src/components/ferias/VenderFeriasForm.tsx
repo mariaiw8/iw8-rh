@@ -5,13 +5,13 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
-import type { FeriasSaldo } from '@/hooks/useFerias'
+import type { FeriasPeriodoSaldo } from '@/types/ferias'
 import { formatDateSafe } from '@/lib/dateUtils'
 
 interface VenderFeriasFormProps {
   open: boolean
   onClose: () => void
-  saldos: FeriasSaldo[]
+  saldos: FeriasPeriodoSaldo[]
   onSubmit: (periodoId: string, dias: number, valor?: number) => Promise<boolean>
 }
 
@@ -21,17 +21,16 @@ export function VenderFeriasForm({ open, onClose, saldos, onSubmit }: VenderFeri
   const [valor, setValor] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // TAREFA 7: Filter periods with dias_restantes > 0 and haven't maxed out venda
-  const saldosDisponiveis = saldos.filter((s) => (s.dias_restantes ?? 0) > 0 && ((s.dias_vendidos ?? 0) < 10))
+  const saldosDisponiveis = saldos.filter((s) => (s.dias_restantes ?? 0) > 0)
 
   const selectedSaldo = saldos.find((s) => s.id === periodoId)
-  const maxDias = selectedSaldo ? Math.min(10 - (selectedSaldo.dias_vendidos || 0), selectedSaldo.dias_restantes ?? 0) : 10
+  const maxDias = selectedSaldo ? Math.min(10, selectedSaldo.dias_restantes ?? 0) : 10
 
-  function formatPeriodoLabel(s: FeriasSaldo) {
-    const inicio = s.periodo_aquisitivo_inicio || s.periodo_inicio || ''
-    const fim = s.periodo_aquisitivo_fim || s.periodo_fim || ''
+  function formatPeriodoLabel(s: FeriasPeriodoSaldo) {
+    const inicio = s.aquisitivo_inicio || ''
+    const fim = s.aquisitivo_fim || ''
     const label = `${formatDateSafe(inicio)} a ${formatDateSafe(fim)}`
-    return `${label} — ${s.dias_restantes ?? 0} dias disponiveis (${s.dias_vendidos || 0} ja vendidos)`
+    return `${label} — ${s.dias_restantes ?? 0} dias disponiveis`
   }
 
   async function handleSubmit(e: React.FormEvent) {

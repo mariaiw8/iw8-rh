@@ -15,7 +15,7 @@ import { FeriasForm, type FeriasFormData } from '@/components/ferias/FeriasForm'
 import { FeriasColetivasForm, type FeriasColetivasFormData } from '@/components/ferias/FeriasColetivasForm'
 import { VenderFeriasForm } from '@/components/ferias/VenderFeriasForm'
 import { Select } from '@/components/ui/Select'
-import { useFerias, type FeriasAVencer, type ProximasFerias, type FeriasColetivas, type FeriasExtrato, type FeriasSaldo } from '@/hooks/useFerias'
+import { useFerias, type FeriasAVencer, type ProximasFerias, type FeriasColetivas, type FeriasExtrato, type FeriasPeriodoSaldo } from '@/hooks/useFerias'
 import { createClient } from '@/lib/supabase'
 import { formatDateSafe } from '@/lib/dateUtils'
 import { Plus, AlertTriangle, Calendar, Users, Trash2, FileText, TrendingUp, TrendingDown, Clock, Ban, DollarSign, ChevronDown, ChevronUp } from 'lucide-react'
@@ -79,7 +79,7 @@ export default function FeriasPage() {
   const [funcionarios, setFuncionarios] = useState<{ value: string; label: string }[]>([])
   const [selectedFuncionarioId, setSelectedFuncionarioId] = useState('')
   const [extrato, setExtrato] = useState<FeriasExtrato[]>([])
-  const [saldos, setSaldos] = useState<FeriasSaldo[]>([])
+  const [saldos, setSaldos] = useState<FeriasPeriodoSaldo[]>([])
   const [loadingExtrato, setLoadingExtrato] = useState(false)
   const [showVenderForm, setShowVenderForm] = useState(false)
   const [editingExtrato, setEditingExtrato] = useState<FeriasExtrato | null>(null)
@@ -146,11 +146,11 @@ export default function FeriasPage() {
   // Computed summary from saldos
   const resumo = {
     diasDireito: saldos.reduce((acc, s) => acc + (s.dias_direito || 0), 0),
-    diasGozados: saldos.reduce((acc, s) => acc + (s.dias_gozados || 0), 0),
+    diasGozados: saldos.reduce((acc, s) => acc + (s.debitos || 0), 0),
     diasDisponiveis: saldos
-      .filter((s) => s.status === 'Disponível' || s.status === 'Parcial')
+      .filter((s) => s.status_calculado === 'Disponível' || s.status_calculado === 'Parcial')
       .reduce((acc, s) => acc + (s.dias_restantes || 0), 0),
-    periodosVencidos: saldos.filter((s) => s.status === 'Vencido').length,
+    periodosVencidos: saldos.filter((s) => s.status_calculado === 'Vencido').length,
   }
 
   async function handleCreateFerias(data: FeriasFormData) {
@@ -190,9 +190,9 @@ export default function FeriasPage() {
   async function handleVender(periodoId: string, dias: number, valor?: number) {
     const ok = await venderFerias(periodoId, dias)
     if (ok && valor && valor > 0) {
-      const { data: saldoData } = await supabase
-        .from('ferias_saldo')
-        .select('periodo_aquisitivo_inicio, periodo_aquisitivo_fim')
+      const { data: periodoData } = await supabase
+        .from('v_ferias_periodos_saldo')
+        .select('aquisitivo_inicio, aquisitivo_fim')
         .eq('id', periodoId)
         .single()
 
@@ -201,7 +201,6 @@ export default function FeriasPage() {
         .from('ferias')
         .insert({
           funcionario_id: selectedFuncionarioId,
-          ferias_saldo_id: periodoId,
           data_inicio: hoje,
           data_fim: hoje,
           dias: 0,
@@ -220,8 +219,8 @@ export default function FeriasPage() {
         .maybeSingle()
 
       if (tipoVenda && feriasRec) {
-        const inicio = saldoData?.periodo_aquisitivo_inicio || ''
-        const fim = saldoData?.periodo_aquisitivo_fim || ''
+        const inicio = periodoData?.aquisitivo_inicio || ''
+        const fim = periodoData?.aquisitivo_fim || ''
         await supabase.from('transacoes').insert({
           funcionario_id: selectedFuncionarioId,
           tipo_transacao_id: tipoVenda.id,
@@ -241,12 +240,12 @@ export default function FeriasPage() {
 
   async function handleSaveExtrato(item: FeriasExtrato, newData: { data?: string; dias?: number }) {
     try {
-      if (item.tipo_movimento === 'CRÉDITO' && item.referencia_tabela === 'ferias_saldo') {
+      if (item.tipo_movimento === 'CRÉDITO' && item.referencia_tabela === 'ferias_periodos') {
         const updatePayload: Record<string, unknown> = {}
         if (newData.dias !== undefined) updatePayload.dias_direito = newData.dias
         if (Object.keys(updatePayload).length > 0) {
           const { error } = await supabase
-            .from('ferias_saldo')
+            .from('ferias_periodos')
             .update(updatePayload)
             .eq('id', item.referencia_id)
           if (error) throw error
@@ -648,38 +647,29 @@ export default function FeriasPage() {
                       ) : (
                         <div className="space-y-3">
                           {saldos.map((s) => {
-                            const usados = (s.dias_gozados || 0) + (s.dias_vendidos || 0)
-                            const programados = s.dias_programados ?? 0
+                            const usados = s.debitos || 0
                             const percentual = s.dias_direito > 0 ? Math.min(100, (usados / s.dias_direito) * 100) : 0
                             const statusColor =
-                              s.status === 'Vencido' ? 'border-red-300 bg-red-50' :
-                              s.status === 'Gozado' ? 'border-gray-300 bg-gray-50' :
-                              s.status === 'Parcial' ? 'border-amber-300 bg-amber-50' :
+                              s.status_calculado === 'Vencido' ? 'border-red-300 bg-red-50' :
+                              s.status_calculado === 'Gozado' ? 'border-gray-300 bg-gray-50' :
+                              s.status_calculado === 'Parcial' ? 'border-amber-300 bg-amber-50' :
                               'border-green-300 bg-green-50'
                             return (
                               <div key={s.id} className={`border rounded-lg p-4 ${statusColor}`}>
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="font-medium text-cinza-preto">
-                                    {formatDateSafe(s.periodo_aquisitivo_inicio)} a {formatDateSafe(s.periodo_aquisitivo_fim)}
+                                    {formatDateSafe(s.aquisitivo_inicio)} a {formatDateSafe(s.aquisitivo_fim)}
                                   </div>
-                                  {getSaldoStatusBadge(s.status)}
+                                  {getSaldoStatusBadge(s.status_calculado)}
                                 </div>
-                                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-sm mb-3">
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
                                   <div>
                                     <span className="text-gray-500">Direito:</span>{' '}
                                     <span className="font-medium">{s.dias_direito} dias</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Gozados:</span>{' '}
-                                    <span className="font-medium">{s.dias_gozados} dias</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Vendidos:</span>{' '}
-                                    <span className="font-medium">{s.dias_vendidos} dias</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Programados:</span>{' '}
-                                    <span className="font-medium">{programados} dias</span>
+                                    <span className="text-gray-500">Debitos:</span>{' '}
+                                    <span className="font-medium">{s.debitos} dias</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Saldo:</span>{' '}
@@ -694,9 +684,9 @@ export default function FeriasPage() {
                                 <div className="w-full bg-gray-100 rounded-full h-2">
                                   <div
                                     className={`h-2 rounded-full transition-all ${
-                                      s.status === 'Vencido' ? 'bg-red-500' :
-                                      s.status === 'Gozado' ? 'bg-gray-400' :
-                                      s.status === 'Parcial' ? 'bg-amber-500' :
+                                      s.status_calculado === 'Vencido' ? 'bg-red-500' :
+                                      s.status_calculado === 'Gozado' ? 'bg-gray-400' :
+                                      s.status_calculado === 'Parcial' ? 'bg-amber-500' :
                                       'bg-green-500'
                                     }`}
                                     style={{ width: `${percentual}%` }}
