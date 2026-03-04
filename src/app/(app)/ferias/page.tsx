@@ -578,7 +578,7 @@ export default function FeriasPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
           <div className="flex items-center gap-2 text-sm text-blue-600 mb-1">
-            <Play size={14} />
+            <Clock size={14} />
             Em Andamento
           </div>
           <div className="text-2xl font-bold text-blue-700">{resumo.emAndamento}</div>
