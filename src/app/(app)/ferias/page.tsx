@@ -191,6 +191,38 @@ export default function FeriasPage() {
     [feriasFiltradas]
   )
 
+  // Agrupa férias coletivas por data_inicio+data_fim, mantém individuais separadas
+  const feriasAtivasAgrupadas = useMemo(() => {
+    const individuais = feriasAtivas.filter(f => f.tipo !== 'Coletiva')
+    const coletivas = feriasAtivas.filter(f => f.tipo === 'Coletiva')
+
+    // Agrupa coletivas por chave data_inicio|data_fim|status
+    const gruposMap = new Map<string, FeriasComFuncionario[]>()
+    for (const f of coletivas) {
+      const key = `${f.data_inicio}|${f.data_fim}|${f.status}`
+      const grupo = gruposMap.get(key) ?? []
+      grupo.push(f)
+      gruposMap.set(key, grupo)
+    }
+
+    type ItemAgrupado = { tipo: 'individual'; ferias: FeriasComFuncionario } | { tipo: 'coletiva'; ferias: FeriasComFuncionario[]; key: string }
+    const resultado: ItemAgrupado[] = []
+
+    // Adiciona individuais
+    for (const f of individuais) resultado.push({ tipo: 'individual', ferias: f })
+    // Adiciona grupos coletivos
+    for (const [key, grupo] of gruposMap) resultado.push({ tipo: 'coletiva', ferias: grupo, key })
+
+    // Ordena por data_inicio descending
+    resultado.sort((a, b) => {
+      const dataA = a.tipo === 'individual' ? a.ferias.data_inicio : a.ferias[0].data_inicio
+      const dataB = b.tipo === 'individual' ? b.ferias.data_inicio : b.ferias[0].data_inicio
+      return dataB.localeCompare(dataA)
+    })
+
+    return resultado
+  }, [feriasAtivas])
+
   const feriasHistorico = useMemo(() => {
     const hist = feriasFiltradas.filter(f => STATUS_HISTORICO.includes(f.status as FeriasStatus))
     if (anoHistorico) {
@@ -237,6 +269,17 @@ export default function FeriasPage() {
     } catch (err) {
       console.error('Erro ao atualizar status:', err)
       toast.error('Erro ao atualizar status')
+    }
+  }
+
+  async function handleAtualizarStatusLote(feriasIds: string[], novoStatus: 'Aprovada' | 'Em Andamento' | 'Concluída' | 'Cancelada') {
+    try {
+      await Promise.all(feriasIds.map(id => atualizarStatusFerias(id, novoStatus)))
+      toast.success(`${feriasIds.length} férias atualizadas para ${novoStatus}`)
+      loadData()
+    } catch (err) {
+      console.error('Erro ao atualizar status em lote:', err)
+      toast.error('Erro ao atualizar status em lote')
     }
   }
 
@@ -383,6 +426,39 @@ export default function FeriasPage() {
       case 'Em Andamento':
         btns.push(
           <button key="concluir" onClick={() => handleAtualizarStatus(f.id, 'Concluída')} className="text-green-600 hover:bg-green-50 p-1.5 rounded" title="Concluir">
+            <CheckCircle size={15} />
+          </button>
+        )
+        break
+    }
+    return <div className="flex items-center gap-1">{btns}</div>
+  }
+
+  function renderColetivaActionButtons(grupo: FeriasComFuncionario[]) {
+    const status = grupo[0].status
+    const ids = grupo.map(f => f.id)
+    const btns: React.ReactNode[] = []
+    switch (status) {
+      case 'Programada':
+        btns.push(
+          <button key="aprovar" onClick={() => handleAtualizarStatusLote(ids, 'Aprovada')} className="text-laranja hover:bg-orange-50 p-1.5 rounded" title="Aprovar todas">
+            <ThumbsUp size={15} />
+          </button>
+        )
+        break
+      case 'Aprovada':
+        btns.push(
+          <button key="iniciar" onClick={() => handleAtualizarStatusLote(ids, 'Em Andamento')} className="text-azul-medio hover:bg-blue-50 p-1.5 rounded" title="Iniciar todas">
+            <Play size={15} />
+          </button>,
+          <button key="cancelar" onClick={() => handleAtualizarStatusLote(ids, 'Cancelada')} className="text-red-500 hover:bg-red-50 p-1.5 rounded" title="Cancelar todas">
+            <XCircle size={15} />
+          </button>
+        )
+        break
+      case 'Em Andamento':
+        btns.push(
+          <button key="concluir" onClick={() => handleAtualizarStatusLote(ids, 'Concluída')} className="text-green-600 hover:bg-green-50 p-1.5 rounded" title="Concluir todas">
             <CheckCircle size={15} />
           </button>
         )
@@ -581,7 +657,7 @@ export default function FeriasPage() {
       {/* ── Tab: Ativas ──────────────────────────────────────────────── */}
       {tab === 'ativas' && (
         <Card>
-          {feriasAtivas.length === 0 ? (
+          {feriasAtivasAgrupadas.length === 0 ? (
             <EmptyState
               icon={<Calendar size={40} />}
               title="Nenhuma ferias ativa"
@@ -601,28 +677,56 @@ export default function FeriasPage() {
                 <TableHead className="w-24">Acoes</TableHead>
               </TableHeader>
               <TableBody>
-                {feriasAtivas.map(f => (
-                  <TableRow key={f.id}>
-                    <TableCell className="font-medium">
-                      <Link
-                        href={`/funcionarios/${f.funcionario_id}?tab=ferias`}
-                        className="text-azul hover:text-laranja hover:underline"
-                      >
-                        {f.funcionarios?.nome_completo || '—'}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{f.funcionarios?.codigo || '—'}</TableCell>
-                    <TableCell>{f.funcionarios?.unidades?.titulo || '—'}</TableCell>
-                    <TableCell>{formatarData(f.data_inicio)}</TableCell>
-                    <TableCell>{formatarData(f.data_fim)}</TableCell>
-                    <TableCell>{f.dias}</TableCell>
-                    <TableCell>
-                      <Badge variant={f.tipo === 'Coletiva' ? 'info' : 'neutral'}>{f.tipo}</Badge>
-                    </TableCell>
-                    <TableCell>{renderStatusBadge(f.status)}</TableCell>
-                    <TableCell>{renderActionButtons(f)}</TableCell>
-                  </TableRow>
-                ))}
+                {feriasAtivasAgrupadas.map(item => {
+                  if (item.tipo === 'individual') {
+                    const f = item.ferias
+                    return (
+                      <TableRow key={f.id}>
+                        <TableCell className="font-medium">
+                          <Link
+                            href={`/funcionarios/${f.funcionario_id}?tab=ferias`}
+                            className="text-azul hover:text-laranja hover:underline"
+                          >
+                            {f.funcionarios?.nome_completo || '—'}
+                          </Link>
+                        </TableCell>
+                        <TableCell>{f.funcionarios?.codigo || '—'}</TableCell>
+                        <TableCell>{f.funcionarios?.unidades?.titulo || '—'}</TableCell>
+                        <TableCell>{formatarData(f.data_inicio)}</TableCell>
+                        <TableCell>{formatarData(f.data_fim)}</TableCell>
+                        <TableCell>{f.dias}</TableCell>
+                        <TableCell>
+                          <Badge variant="neutral">Individual</Badge>
+                        </TableCell>
+                        <TableCell>{renderStatusBadge(f.status)}</TableCell>
+                        <TableCell>{renderActionButtons(f)}</TableCell>
+                      </TableRow>
+                    )
+                  } else {
+                    const grupo = item.ferias
+                    const primeiro = grupo[0]
+                    return (
+                      <TableRow key={item.key} className="bg-blue-50/30">
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <Users size={14} className="text-azul-medio" />
+                            <span className="text-azul-medio">{grupo.length} funcionários</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>—</TableCell>
+                        <TableCell>{primeiro.funcionarios?.unidades?.titulo || '—'}</TableCell>
+                        <TableCell>{formatarData(primeiro.data_inicio)}</TableCell>
+                        <TableCell>{formatarData(primeiro.data_fim)}</TableCell>
+                        <TableCell>{primeiro.dias}</TableCell>
+                        <TableCell>
+                          <Badge variant="info">Coletiva</Badge>
+                        </TableCell>
+                        <TableCell>{renderStatusBadge(primeiro.status)}</TableCell>
+                        <TableCell>{renderColetivaActionButtons(grupo)}</TableCell>
+                      </TableRow>
+                    )
+                  }
+                })}
               </TableBody>
             </Table>
           )}
