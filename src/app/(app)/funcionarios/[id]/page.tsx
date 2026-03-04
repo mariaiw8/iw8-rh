@@ -25,10 +25,10 @@ function safeFormat(dateStr: string | null | undefined, fmt: string = 'dd/MM/yyy
   return formatDateSafe(dateStr, fmt)
 }
 
-import { useFerias, type Ferias, type FeriasExtrato } from '@/hooks/useFerias'
 import { useOcorrencias, type Ocorrencia, type TipoOcorrencia } from '@/hooks/useOcorrencias'
 import { OcorrenciaForm, type OcorrenciaFormData } from '@/components/ocorrencias/OcorrenciaForm'
 import type {
+  Ferias,
   FeriasPeriodoSaldo,
   FeriasMovimentacao,
   FeriasTipo,
