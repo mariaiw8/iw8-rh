@@ -208,30 +208,6 @@ export function FeriasForm({ open, onClose, onSubmit, funcionarioId, funcionario
           error={validationError || undefined}
         />
 
-        {/* Abono pecuniário */}
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm text-cinza-preto">
-            <input
-              type="checkbox"
-              checked={form.abono_pecuniario}
-              onChange={(e) => setForm({ ...form, abono_pecuniario: e.target.checked, dias_vendidos: e.target.checked ? form.dias_vendidos : 0 })}
-              className="rounded border-gray-300 text-laranja focus:ring-laranja"
-            />
-            Abono Pecuniario
-          </label>
-          {form.abono_pecuniario && (
-            <Input
-              label="Dias Vendidos (max 10 - Art. 143 CLT)"
-              type="number"
-              value={form.dias_vendidos.toString()}
-              onChange={(e) => {
-                const val = Math.min(10, parseInt(e.target.value) || 0)
-                setForm({ ...form, dias_vendidos: val })
-              }}
-            />
-          )}
-        </div>
-
         <div>
           <label className="block text-sm font-medium text-cinza-preto mb-1">Observacao</label>
           <textarea

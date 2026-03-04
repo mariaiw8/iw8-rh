@@ -25,7 +25,7 @@ import {
 } from '@/lib/ferias-service'
 import {
   Plus, AlertTriangle, Calendar, Users, Search, X, Filter,
-  Play, CheckCircle, XCircle, Trash2, ThumbsUp, Clock,
+  CheckCircle, XCircle, Trash2, ThumbsUp, Clock,
   TrendingUp, Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -414,19 +414,10 @@ export default function FeriasPage() {
         )
         break
       case 'Aprovada':
-        btns.push(
-          <button key="iniciar" onClick={() => handleAtualizarStatus(f.id, 'Em Andamento')} className="text-azul-medio hover:bg-blue-50 p-1.5 rounded" title="Iniciar">
-            <Play size={15} />
-          </button>,
-          <button key="cancelar" onClick={() => handleAtualizarStatus(f.id, 'Cancelada')} className="text-red-500 hover:bg-red-50 p-1.5 rounded" title="Cancelar">
-            <XCircle size={15} />
-          </button>
-        )
-        break
       case 'Em Andamento':
         btns.push(
-          <button key="concluir" onClick={() => handleAtualizarStatus(f.id, 'Concluída')} className="text-green-600 hover:bg-green-50 p-1.5 rounded" title="Concluir">
-            <CheckCircle size={15} />
+          <button key="cancelar" onClick={() => handleAtualizarStatus(f.id, 'Cancelada')} className="text-red-500 hover:bg-red-50 p-1.5 rounded" title="Cancelar">
+            <XCircle size={15} />
           </button>
         )
         break
@@ -447,19 +438,10 @@ export default function FeriasPage() {
         )
         break
       case 'Aprovada':
-        btns.push(
-          <button key="iniciar" onClick={() => handleAtualizarStatusLote(ids, 'Em Andamento')} className="text-azul-medio hover:bg-blue-50 p-1.5 rounded" title="Iniciar todas">
-            <Play size={15} />
-          </button>,
-          <button key="cancelar" onClick={() => handleAtualizarStatusLote(ids, 'Cancelada')} className="text-red-500 hover:bg-red-50 p-1.5 rounded" title="Cancelar todas">
-            <XCircle size={15} />
-          </button>
-        )
-        break
       case 'Em Andamento':
         btns.push(
-          <button key="concluir" onClick={() => handleAtualizarStatusLote(ids, 'Concluída')} className="text-green-600 hover:bg-green-50 p-1.5 rounded" title="Concluir todas">
-            <CheckCircle size={15} />
+          <button key="cancelar" onClick={() => handleAtualizarStatusLote(ids, 'Cancelada')} className="text-red-500 hover:bg-red-50 p-1.5 rounded" title="Cancelar todas">
+            <XCircle size={15} />
           </button>
         )
         break

@@ -866,7 +866,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
   const [periodos, setPeriodos] = useState<FeriasPeriodoSaldo[]>([])
   const [ferias, setFerias] = useState<Ferias[]>([])
   const [loading, setLoading] = useState(true)
-  const [modalAberto, setModalAberto] = useState<'criar-ferias' | 'criar-periodo' | 'extrato' | null>(null)
+  const [modalAberto, setModalAberto] = useState<'criar-ferias' | 'criar-periodo' | 'extrato' | 'vender-dias' | null>(null)
   const [periodoSelecionado, setPeriodoSelecionado] = useState<FeriasPeriodoSaldo | null>(null)
   const [movimentacoes, setMovimentacoes] = useState<FeriasMovimentacao[]>([])
 
@@ -876,8 +876,6 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
     data_fim: '',
     dias: 0,
     tipo: 'Individual' as FeriasTipo,
-    abono_pecuniario: false,
-    dias_vendidos: 0,
     observacao: '',
   })
   const [alocacoesPreview, setAlocacoesPreview] = useState<{
@@ -888,6 +886,9 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
   } | null>(null)
   const [erroAlocacao, setErroAlocacao] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
+
+  // Form vender dias
+  const [vendaDiasForm, setVendaDiasForm] = useState<{ periodo_id: string; dias: number }>({ periodo_id: '', dias: 0 })
 
   // Form criar periodo
   const [formPeriodo, setFormPeriodo] = useState({
@@ -932,17 +933,15 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
   // Preview de alocacao
   async function atualizarPreviewAlocacao(dados?: typeof formFerias) {
     const d = dados || formFerias
-    const diasGozo = d.dias - d.dias_vendidos
-    const diasVenda = d.dias_vendidos
 
-    if (diasGozo <= 0 || !d.data_inicio) {
+    if (d.dias <= 0 || !d.data_inicio) {
       setAlocacoesPreview(null)
       setErroAlocacao(null)
       return
     }
 
     try {
-      const preview = await calcularAlocacoesAutomaticas(funcionarioId, diasGozo, diasVenda)
+      const preview = await calcularAlocacoesAutomaticas(funcionarioId, d.dias, 0)
       setAlocacoesPreview(preview)
       setErroAlocacao(null)
     } catch (err: any) {
@@ -953,16 +952,9 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
 
   function handleFormFeriasChange(updates: Partial<typeof formFerias>) {
     const next = { ...formFerias, ...updates }
-    // Auto-calc dias
     if (next.data_inicio && next.data_fim) {
       next.dias = calcularDiasCorridos(next.data_inicio, next.data_fim)
     }
-    // Ensure dias_vendidos doesn't exceed 1/3
-    if (next.abono_pecuniario && next.dias > 0) {
-      const maxVenda = Math.floor(next.dias / 3)
-      if (next.dias_vendidos > maxVenda) next.dias_vendidos = maxVenda
-    }
-    if (!next.abono_pecuniario) next.dias_vendidos = 0
     setFormFerias(next)
     if (next.data_inicio && next.data_fim && next.dias > 0) {
       atualizarPreviewAlocacao(next)
@@ -974,9 +966,7 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
     if (erroAlocacao) return
     setSalvando(true)
     try {
-      const diasGozo = formFerias.dias - formFerias.dias_vendidos
-      const diasVenda = formFerias.dias_vendidos
-      const preview = await calcularAlocacoesAutomaticas(funcionarioId, diasGozo, diasVenda)
+      const preview = await calcularAlocacoesAutomaticas(funcionarioId, formFerias.dias, 0)
 
       await criarFeriasService({
         funcionario_id: funcionarioId,
@@ -984,16 +974,16 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
         data_fim: formFerias.data_fim,
         dias: formFerias.dias,
         tipo: formFerias.tipo,
-        abono_pecuniario: formFerias.abono_pecuniario,
-        dias_vendidos: formFerias.dias_vendidos,
+        abono_pecuniario: false,
+        dias_vendidos: 0,
         observacao: formFerias.observacao || null,
         alocacoes_gozo: preview.alocacoesGozo,
-        alocacoes_venda: preview.alocacoesVenda,
+        alocacoes_venda: [],
       })
 
       toast.success('Ferias registradas com sucesso')
       setModalAberto(null)
-      setFormFerias({ data_inicio: '', data_fim: '', dias: 0, tipo: 'Individual', abono_pecuniario: false, dias_vendidos: 0, observacao: '' })
+      setFormFerias({ data_inicio: '', data_fim: '', dias: 0, tipo: 'Individual', observacao: '' })
       setAlocacoesPreview(null)
       setErroAlocacao(null)
       await carregarDados()
@@ -1045,6 +1035,39 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
       await carregarDados()
     } catch (err: any) {
       toast.error(err.message || 'Erro ao excluir ferias')
+    }
+  }
+
+  async function handleVenderDias() {
+    if (!vendaDiasForm.periodo_id || vendaDiasForm.dias <= 0) return
+    setSalvando(true)
+    try {
+      const periodo = periodos.find(p => p.id === vendaDiasForm.periodo_id)
+      if (!periodo) throw new Error('Periodo nao encontrado')
+      if (vendaDiasForm.dias > 10) throw new Error('Maximo de 10 dias por periodo (Art. 143 CLT)')
+      if (vendaDiasForm.dias > periodo.dias_restantes) throw new Error(`Saldo insuficiente. Disponivel: ${periodo.dias_restantes} dias`)
+
+      await criarFeriasService({
+        funcionario_id: funcionarioId,
+        data_inicio: new Date().toISOString().slice(0, 10),
+        data_fim: new Date().toISOString().slice(0, 10),
+        dias: vendaDiasForm.dias,
+        tipo: 'Individual',
+        abono_pecuniario: true,
+        dias_vendidos: vendaDiasForm.dias,
+        observacao: `Abono pecuniario - ${vendaDiasForm.dias} dias vendidos`,
+        alocacoes_gozo: [],
+        alocacoes_venda: [{ ferias_periodo_id: vendaDiasForm.periodo_id, dias: vendaDiasForm.dias }],
+      })
+
+      toast.success(`${vendaDiasForm.dias} dias vendidos com sucesso`)
+      setModalAberto(null)
+      setVendaDiasForm({ periodo_id: '', dias: 0 })
+      await carregarDados()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao vender dias')
+    } finally {
+      setSalvando(false)
     }
   }
 
@@ -1213,9 +1236,14 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
             <Calendar size={18} className="text-azul-medio" />
             Historico de Ferias
           </h3>
-          <Button type="button" size="sm" onClick={() => { setFormFerias({ data_inicio: '', data_fim: '', dias: 0, tipo: 'Individual', abono_pecuniario: false, dias_vendidos: 0, observacao: '' }); setAlocacoesPreview(null); setErroAlocacao(null); setModalAberto('criar-ferias') }}>
-            <Plus size={14} /> Registrar Ferias
-          </Button>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={() => { setVendaDiasForm({ periodo_id: '', dias: 0 }); setModalAberto('vender-dias') }}>
+              Vender Dias
+            </Button>
+            <Button type="button" size="sm" onClick={() => { setFormFerias({ data_inicio: '', data_fim: '', dias: 0, tipo: 'Individual', observacao: '' }); setAlocacoesPreview(null); setErroAlocacao(null); setModalAberto('criar-ferias') }}>
+              <Plus size={14} /> Registrar Ferias
+            </Button>
+          </div>
         </div>
         {ferias.length === 0 ? (
           <EmptyState icon={<Calendar size={40} />} title="Nenhum registro" description="Nenhuma ferias registrada" />
@@ -1259,14 +1287,8 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
                             <button type="button" onClick={() => handleExcluirFerias(f.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14} /></button>
                           </>
                         )}
-                        {f.status === 'Aprovada' && (
-                          <>
-                            <button type="button" onClick={() => handleAtualizarStatus(f.id, 'Em Andamento')} className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200">Iniciar</button>
-                            <button type="button" onClick={() => handleAtualizarStatus(f.id, 'Cancelada')} className="text-xs px-2 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">Cancelar</button>
-                          </>
-                        )}
-                        {f.status === 'Em Andamento' && (
-                          <button type="button" onClick={() => handleAtualizarStatus(f.id, 'Concluída')} className="text-xs px-2 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100 border border-green-200">Concluir</button>
+                        {(f.status === 'Aprovada' || f.status === 'Em Andamento') && (
+                          <button type="button" onClick={() => handleAtualizarStatus(f.id, 'Cancelada')} className="text-xs px-2 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">Cancelar</button>
                         )}
                         {(f.status === 'Concluída' || f.status === 'Cancelada') && (
                           <span className="text-xs text-gray-400">—</span>
@@ -1298,31 +1320,6 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
             />
           </div>
 
-          {/* Abono Pecuniario */}
-          <div className="border rounded-lg p-3 space-y-2">
-            <label className="flex items-center gap-2 text-sm text-cinza-preto">
-              <input
-                type="checkbox"
-                checked={formFerias.abono_pecuniario}
-                onChange={(e) => handleFormFeriasChange({ abono_pecuniario: e.target.checked })}
-                className="rounded border-gray-300 text-laranja focus:ring-laranja"
-              />
-              Deseja vender dias (abono pecuniario)?
-            </label>
-            {formFerias.abono_pecuniario && formFerias.dias > 0 && (
-              <Input
-                label={`Dias a vender (max ${Math.floor(formFerias.dias / 3)})`}
-                type="number"
-                value={formFerias.dias_vendidos.toString()}
-                onChange={(e) => {
-                  const max = Math.floor(formFerias.dias / 3)
-                  const val = Math.min(max, Math.max(0, parseInt(e.target.value) || 0))
-                  handleFormFeriasChange({ dias_vendidos: val })
-                }}
-              />
-            )}
-          </div>
-
           {/* Observacao */}
           <div>
             <label className="block text-sm font-medium text-cinza-preto mb-1">Observacao</label>
@@ -1343,14 +1340,6 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
                 return (
                   <p key={`gozo-${i}`} className="text-blue-700">
                     {a.dias} dias de gozo — {per ? formatarPeriodoAquisitivo(per.aquisitivo_inicio, per.aquisitivo_fim) : '?'} (vence em {per ? formatarData(per.data_vencimento) : '?'})
-                  </p>
-                )
-              })}
-              {alocacoesPreview.alocacoesVenda.map((a, i) => {
-                const per = alocacoesPreview.periodos.find((p) => p.id === a.ferias_periodo_id)
-                return (
-                  <p key={`venda-${i}`} className="text-amber-700">
-                    {a.dias} dias de venda — {per ? formatarPeriodoAquisitivo(per.aquisitivo_inicio, per.aquisitivo_fim) : '?'} (vence em {per ? formatarData(per.data_vencimento) : '?'})
                   </p>
                 )
               })}
@@ -1452,6 +1441,57 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
             )}
           </div>
         )}
+      </Modal>
+
+      {/* Modal: Vender Dias (Abono Pecuniario) */}
+      <Modal open={modalAberto === 'vender-dias'} onClose={() => setModalAberto(null)} title="Vender Dias (Abono Pecuniario)">
+        <div className="space-y-4">
+          <p className="text-sm text-cinza-estrutural">
+            Selecione o periodo aquisitivo e a quantidade de dias a vender (maximo 10 dias por periodo - Art. 143 CLT).
+          </p>
+
+          <Select
+            label="Periodo Aquisitivo *"
+            value={vendaDiasForm.periodo_id}
+            onChange={(e) => setVendaDiasForm({ ...vendaDiasForm, periodo_id: e.target.value, dias: 0 })}
+            options={[
+              { value: '', label: 'Selecione um periodo...' },
+              ...periodos
+                .filter(p => p.dias_restantes > 0)
+                .map(p => ({
+                  value: p.id,
+                  label: `${formatarPeriodoAquisitivo(p.aquisitivo_inicio, p.aquisitivo_fim)} — ${p.dias_restantes} dias disponiveis`,
+                })),
+            ]}
+          />
+
+          {vendaDiasForm.periodo_id && (() => {
+            const per = periodos.find(p => p.id === vendaDiasForm.periodo_id)
+            const maxDias = per ? Math.min(10, per.dias_restantes) : 0
+            return (
+              <Input
+                label={`Dias a vender (max ${maxDias})`}
+                type="number"
+                value={vendaDiasForm.dias.toString()}
+                onChange={(e) => {
+                  const val = Math.min(maxDias, Math.max(0, parseInt(e.target.value) || 0))
+                  setVendaDiasForm({ ...vendaDiasForm, dias: val })
+                }}
+              />
+            )
+          })()}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setModalAberto(null)}>Cancelar</Button>
+            <Button
+              type="button"
+              onClick={handleVenderDias}
+              disabled={salvando || !vendaDiasForm.periodo_id || vendaDiasForm.dias <= 0}
+            >
+              {salvando ? 'Processando...' : 'Confirmar Venda'}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   )
