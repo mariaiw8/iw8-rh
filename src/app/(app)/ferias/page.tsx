@@ -133,7 +133,7 @@ export default function FeriasPage() {
   async function loadAlertasVencimento(): Promise<AlertaVencimento[]> {
     const { data, error } = await supabase
       .from('v_ferias_periodos_saldo')
-      .select('*, funcionarios:funcionario_id(nome_completo, codigo, unidade_id, unidades(titulo))')
+      .select('*, funcionarios:funcionario_id(nome_completo, codigo, unidade_id, unidades:unidade_id(titulo))')
       .in('status_calculado', ['Disponível', 'Parcial'])
       .gt('dias_restantes', 0)
       .order('data_vencimento', { ascending: true })

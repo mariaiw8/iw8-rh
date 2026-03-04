@@ -102,8 +102,8 @@ export async function getAllFerias(filtros?: {
         codigo,
         unidade_id,
         setor_id,
-        unidades ( titulo ),
-        setores ( titulo )
+        unidades:unidade_id ( titulo ),
+        setores:setor_id ( titulo )
       )
     `)
     .order('data_inicio', { ascending: false })
