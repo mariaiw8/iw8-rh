@@ -25,13 +25,34 @@ function safeFormat(dateStr: string | null | undefined, fmt: string = 'dd/MM/yyy
   return formatDateSafe(dateStr, fmt)
 }
 
-import { useFerias, type FeriasPeriodoSaldo, type Ferias, type FeriasExtrato } from '@/hooks/useFerias'
+import { useFerias, type Ferias, type FeriasExtrato } from '@/hooks/useFerias'
 import { useOcorrencias, type Ocorrencia, type TipoOcorrencia } from '@/hooks/useOcorrencias'
-import { SaldoFerias } from '@/components/ferias/SaldoFerias'
-import { FeriasAlert } from '@/components/ferias/FeriasAlert'
-import { FeriasForm, type FeriasFormData } from '@/components/ferias/FeriasForm'
-import { VenderFeriasForm } from '@/components/ferias/VenderFeriasForm'
 import { OcorrenciaForm, type OcorrenciaFormData } from '@/components/ocorrencias/OcorrenciaForm'
+import type {
+  FeriasPeriodoSaldo,
+  FeriasMovimentacao,
+  FeriasTipo,
+  FeriasStatus,
+  AlocacaoPayload,
+  CriarPeriodoPayload,
+} from '@/types/ferias'
+import {
+  getPeriodosByFuncionario,
+  getFeriasByFuncionario,
+  calcularAlocacoesAutomaticas,
+  criarFerias as criarFeriasService,
+  criarPeriodo,
+  deletarPeriodo,
+  atualizarStatusFerias,
+  deletarFerias as deletarFeriasService,
+  getMovimentacoesByPeriodo,
+  getAlocacoesByFerias,
+  getStatusFeriasConfig,
+  getStatusPeriodoConfig,
+  calcularDiasCorridos,
+  formatarData,
+  formatarPeriodoAquisitivo,
+} from '@/lib/ferias-service'
 import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from '@/components/ui/Table'
 import { EmptyState } from '@/components/ui/EmptyState'
 
@@ -840,203 +861,218 @@ export default function FuncionarioDetailPage() {
 }
 
 // =================== FERIAS TAB ===================
-function getSaldoStatusBadge(status: string) {
-  switch (status) {
-    case 'Disponível': return <Badge variant="success">Disponivel</Badge>
-    case 'Parcial': return <Badge variant="warning">Parcial</Badge>
-    case 'Gozado': return <Badge variant="neutral">Gozado</Badge>
-    case 'Vencido': return <Badge variant="danger">Vencido</Badge>
-    default: return <Badge>{status}</Badge>
-  }
-}
 
 function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; funcionarioNome: string }) {
-  const {
-    loadSaldos,
-    loadExtrato,
-    loadFeriasFuncionario,
-    loadSaldosFuncionario,
-    createFerias,
-    deleteFerias,
-    venderFerias,
-    updateSaldoDireito,
-    loadPeriodosDisponiveis,
-  } = useFerias()
-
-  const supabase = createClient()
-
-  const [saldos, setSaldos] = useState<FeriasPeriodoSaldo[]>([])
+  const [periodos, setPeriodos] = useState<FeriasPeriodoSaldo[]>([])
   const [ferias, setFerias] = useState<Ferias[]>([])
-  const [extrato, setExtrato] = useState<FeriasExtrato[]>([])
-  const [loadingFerias, setLoadingFerias] = useState(true)
-  const [showFeriasForm, setShowFeriasForm] = useState(false)
-  const [showVenderForm, setShowVenderForm] = useState(false)
-  const [editingExtrato, setEditingExtrato] = useState<FeriasExtrato | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [modalAberto, setModalAberto] = useState<'criar-ferias' | 'criar-periodo' | 'extrato' | null>(null)
+  const [periodoSelecionado, setPeriodoSelecionado] = useState<FeriasPeriodoSaldo | null>(null)
+  const [movimentacoes, setMovimentacoes] = useState<FeriasMovimentacao[]>([])
 
-  const loadData = useCallback(async () => {
-    setLoadingFerias(true)
+  // Form criar ferias
+  const [formFerias, setFormFerias] = useState({
+    data_inicio: '',
+    data_fim: '',
+    dias: 0,
+    tipo: 'Individual' as FeriasTipo,
+    abono_pecuniario: false,
+    dias_vendidos: 0,
+    observacao: '',
+  })
+  const [alocacoesPreview, setAlocacoesPreview] = useState<{
+    alocacoesGozo: AlocacaoPayload[]
+    alocacoesVenda: AlocacaoPayload[]
+    saldoTotalDisponivel: number
+    periodos: FeriasPeriodoSaldo[]
+  } | null>(null)
+  const [erroAlocacao, setErroAlocacao] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState(false)
+
+  // Form criar periodo
+  const [formPeriodo, setFormPeriodo] = useState({
+    aquisitivo_inicio: '',
+    aquisitivo_fim: '',
+    data_vencimento: '',
+    dias_direito: 30,
+  })
+
+  const carregarDados = useCallback(async () => {
+    setLoading(true)
     try {
-      const [s, f, e] = await Promise.all([
-        loadSaldos(funcionarioId),
-        loadFeriasFuncionario(funcionarioId),
-        loadExtrato(funcionarioId),
+      const [periodosData, feriasData] = await Promise.all([
+        getPeriodosByFuncionario(funcionarioId),
+        getFeriasByFuncionario(funcionarioId),
       ])
-      setSaldos(s)
-      setFerias(f)
-      setExtrato(e)
+      setPeriodos(periodosData)
+      setFerias(feriasData)
+    } catch (err) {
+      toast.error('Erro ao carregar dados de ferias')
     } finally {
-      setLoadingFerias(false)
+      setLoading(false)
     }
-  }, [funcionarioId, loadSaldos, loadExtrato, loadFeriasFuncionario])
+  }, [funcionarioId])
 
   useEffect(() => {
-    loadData()
-  }, [loadData])
+    carregarDados()
+  }, [carregarDados])
 
-  const proximaFerias = ferias.find((f) => f.status === 'Programada')
-  const alertCount = saldos.filter((s) => {
-    const vencimento = safeDate(s.data_vencimento)
-    if (!vencimento) return false
-    const now = new Date()
-    const diffMs = vencimento.getTime() - now.getTime()
-    const diffDays = diffMs / (1000 * 60 * 60 * 24)
-    return diffDays > 0 && diffDays <= 120 && (s.dias_restantes ?? 0) > 0
-  }).length
-  const vencidaCount = saldos.filter((s) => s.status_calculado === 'Vencido').length
+  // Resumo computado
+  const totalDisponivel = periodos
+    .filter((p) => p.status_calculado !== 'Vencido')
+    .reduce((acc, p) => acc + (p.dias_restantes || 0), 0)
+  const periodosAtivos = periodos.filter((p) => (p.dias_restantes || 0) > 0 && p.status_calculado !== 'Vencido').length
+  const proximoVencimento = periodos
+    .filter((p) => (p.dias_restantes || 0) > 0 && p.status_calculado !== 'Vencido')
+    .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento))[0]
+  const diasVencidos = periodos
+    .filter((p) => p.status_calculado === 'Vencido')
+    .reduce((acc, p) => acc + (p.dias_restantes || 0), 0)
 
-  // Resumo from saldos (same as ferias page)
-  const resumo = {
-    diasDireito: saldos.reduce((acc, s) => acc + (s.dias_direito || 0), 0),
-    diasGozados: saldos.reduce((acc, s) => acc + (s.debitos || 0), 0),
-    diasDisponiveis: saldos
-      .filter((s) => s.status_calculado === 'Disponível' || s.status_calculado === 'Parcial')
-      .reduce((acc, s) => acc + (s.dias_restantes || 0), 0),
-    periodosVencidos: saldos.filter((s) => s.status_calculado === 'Vencido').length,
-  }
+  // Preview de alocacao
+  async function atualizarPreviewAlocacao(dados?: typeof formFerias) {
+    const d = dados || formFerias
+    const diasGozo = d.dias - d.dias_vendidos
+    const diasVenda = d.dias_vendidos
 
-  async function handleCreateFerias(data: FeriasFormData) {
-    await createFerias({
-      funcionario_id: data.funcionario_id,
-      data_inicio: data.data_inicio,
-      data_fim: data.data_fim,
-      dias: data.dias,
-      tipo: data.tipo,
-      periodo_aquisitivo_id: data.periodo_aquisitivo_id || undefined,
-      abono_pecuniario: data.abono_pecuniario,
-      dias_vendidos: data.dias_vendidos,
-      observacao: data.observacao || undefined,
-    })
-    loadData()
-  }
-
-  async function handleVender(periodoId: string, dias: number, valor?: number) {
-    const ok = await venderFerias(periodoId, dias)
-    if (ok && valor && valor > 0) {
-      // Create ferias record for the sale
-      const { data: periodoData } = await supabase
-        .from('v_ferias_periodos_saldo')
-        .select('aquisitivo_inicio, aquisitivo_fim')
-        .eq('id', periodoId)
-        .single()
-
-      const hoje = new Date().toISOString().split('T')[0]
-      const { data: feriasRec } = await supabase
-        .from('ferias')
-        .insert({
-          funcionario_id: funcionarioId,
-          data_inicio: hoje,
-          data_fim: hoje,
-          dias: 0,
-          abono_pecuniario: true,
-          dias_vendidos: dias,
-          status: 'Concluída',
-          tipo: 'Individual',
-        })
-        .select('id')
-        .single()
-
-      // Register financial transaction
-      const { data: tipoVenda } = await supabase
-        .from('tipos_transacao')
-        .select('id')
-        .eq('titulo', 'Venda de Férias')
-        .maybeSingle()
-
-      if (tipoVenda && feriasRec) {
-        const inicio = periodoData?.aquisitivo_inicio || ''
-        const fim = periodoData?.aquisitivo_fim || ''
-        await supabase.from('transacoes').insert({
-          funcionario_id: funcionarioId,
-          tipo_transacao_id: tipoVenda.id,
-          valor: valor,
-          data: hoje,
-          descricao: `Venda de ${dias} dias de ferias — Periodo ${inicio} a ${fim}`,
-          origem_tabela: 'ferias',
-          origem_id: feriasRec.id,
-        })
-      }
+    if (diasGozo <= 0 || !d.data_inicio) {
+      setAlocacoesPreview(null)
+      setErroAlocacao(null)
+      return
     }
-    if (ok) loadData()
-    return ok
-  }
 
-  async function handleDeleteFerias(id: string) {
-    if (!confirm('Deseja excluir estas ferias?')) return
-    await deleteFerias(id)
-    loadData()
-  }
-
-  async function handleUpdateDireito(saldoId: string, dias: number) {
-    const ok = await updateSaldoDireito(saldoId, dias)
-    if (ok) loadData()
-    return ok
-  }
-
-  async function handleSaveExtrato(item: FeriasExtrato, newData: { data?: string; dias?: number }) {
     try {
-      if (item.tipo_movimento === 'CRÉDITO' && item.referencia_tabela === 'ferias_periodos') {
-        const updatePayload: Record<string, unknown> = {}
-        if (newData.dias !== undefined) updatePayload.dias_direito = newData.dias
-        if (Object.keys(updatePayload).length > 0) {
-          const { error } = await supabase
-            .from('ferias_periodos')
-            .update(updatePayload)
-            .eq('id', item.referencia_id)
-          if (error) throw error
-        }
-      } else if (item.referencia_tabela === 'ferias') {
-        const updatePayload: Record<string, unknown> = {}
-        if (newData.dias !== undefined) updatePayload.dias = newData.dias
-        if (newData.data !== undefined) updatePayload.data_inicio = newData.data
-        if (Object.keys(updatePayload).length > 0) {
-          const { error } = await supabase
-            .from('ferias')
-            .update(updatePayload)
-            .eq('id', item.referencia_id)
-          if (error) throw error
-        }
-      } else if (item.referencia_tabela === 'ocorrencias') {
-        const updatePayload: Record<string, unknown> = {}
-        if (newData.dias !== undefined) updatePayload.dias = newData.dias
-        if (newData.data !== undefined) updatePayload.data_inicio = newData.data
-        if (Object.keys(updatePayload).length > 0) {
-          const { error } = await supabase
-            .from('ocorrencias')
-            .update(updatePayload)
-            .eq('id', item.referencia_id)
-          if (error) throw error
-        }
-      }
-      toast.success('Movimentacao atualizada')
-      setEditingExtrato(null)
-      loadData()
-    } catch (err) {
-      console.error('Erro ao editar extrato:', err)
-      toast.error('Erro ao editar movimentacao')
+      const preview = await calcularAlocacoesAutomaticas(funcionarioId, diasGozo, diasVenda)
+      setAlocacoesPreview(preview)
+      setErroAlocacao(null)
+    } catch (err: any) {
+      setAlocacoesPreview(null)
+      setErroAlocacao(err.message)
     }
   }
 
-  if (loadingFerias) {
+  function handleFormFeriasChange(updates: Partial<typeof formFerias>) {
+    const next = { ...formFerias, ...updates }
+    // Auto-calc dias
+    if (next.data_inicio && next.data_fim) {
+      next.dias = calcularDiasCorridos(next.data_inicio, next.data_fim)
+    }
+    // Ensure dias_vendidos doesn't exceed 1/3
+    if (next.abono_pecuniario && next.dias > 0) {
+      const maxVenda = Math.floor(next.dias / 3)
+      if (next.dias_vendidos > maxVenda) next.dias_vendidos = maxVenda
+    }
+    if (!next.abono_pecuniario) next.dias_vendidos = 0
+    setFormFerias(next)
+    if (next.data_inicio && next.data_fim && next.dias > 0) {
+      atualizarPreviewAlocacao(next)
+    }
+  }
+
+  async function handleSalvarFerias() {
+    if (!formFerias.data_inicio || !formFerias.data_fim || formFerias.dias <= 0) return
+    if (erroAlocacao) return
+    setSalvando(true)
+    try {
+      const diasGozo = formFerias.dias - formFerias.dias_vendidos
+      const diasVenda = formFerias.dias_vendidos
+      const preview = await calcularAlocacoesAutomaticas(funcionarioId, diasGozo, diasVenda)
+
+      await criarFeriasService({
+        funcionario_id: funcionarioId,
+        data_inicio: formFerias.data_inicio,
+        data_fim: formFerias.data_fim,
+        dias: formFerias.dias,
+        tipo: formFerias.tipo,
+        abono_pecuniario: formFerias.abono_pecuniario,
+        dias_vendidos: formFerias.dias_vendidos,
+        observacao: formFerias.observacao || null,
+        alocacoes_gozo: preview.alocacoesGozo,
+        alocacoes_venda: preview.alocacoesVenda,
+      })
+
+      toast.success('Ferias registradas com sucesso')
+      setModalAberto(null)
+      setFormFerias({ data_inicio: '', data_fim: '', dias: 0, tipo: 'Individual', abono_pecuniario: false, dias_vendidos: 0, observacao: '' })
+      setAlocacoesPreview(null)
+      setErroAlocacao(null)
+      await carregarDados()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao registrar ferias')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function handleCriarPeriodo() {
+    if (!formPeriodo.aquisitivo_inicio || !formPeriodo.aquisitivo_fim || !formPeriodo.data_vencimento) return
+    setSalvando(true)
+    try {
+      await criarPeriodo({
+        funcionario_id: funcionarioId,
+        aquisitivo_inicio: formPeriodo.aquisitivo_inicio,
+        aquisitivo_fim: formPeriodo.aquisitivo_fim,
+        data_vencimento: formPeriodo.data_vencimento,
+        dias_direito: formPeriodo.dias_direito,
+      })
+      toast.success('Periodo aquisitivo criado')
+      setModalAberto(null)
+      setFormPeriodo({ aquisitivo_inicio: '', aquisitivo_fim: '', data_vencimento: '', dias_direito: 30 })
+      await carregarDados()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao criar periodo')
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function handleAtualizarStatus(feriasId: string, novoStatus: 'Aprovada' | 'Em Andamento' | 'Concluída' | 'Cancelada') {
+    try {
+      await atualizarStatusFerias(feriasId, novoStatus)
+      const labels: Record<string, string> = { 'Aprovada': 'aprovadas', 'Em Andamento': 'iniciadas', 'Concluída': 'concluidas', 'Cancelada': 'canceladas' }
+      toast.success(`Ferias ${labels[novoStatus]} com sucesso`)
+      await carregarDados()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao atualizar status')
+    }
+  }
+
+  async function handleExcluirFerias(feriasId: string) {
+    if (!confirm('Excluir esta ferias programada?')) return
+    try {
+      await deletarFeriasService(feriasId)
+      toast.success('Ferias excluidas')
+      await carregarDados()
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao excluir ferias')
+    }
+  }
+
+  async function handleVerExtrato(periodo: FeriasPeriodoSaldo) {
+    setPeriodoSelecionado(periodo)
+    try {
+      const movs = await getMovimentacoesByPeriodo(periodo.id)
+      setMovimentacoes(movs)
+    } catch {
+      setMovimentacoes([])
+    }
+    setModalAberto('extrato')
+  }
+
+  function handleAquisitivoFimChange(val: string) {
+    setFormPeriodo((prev) => {
+      const next = { ...prev, aquisitivo_fim: val }
+      // Auto-suggest vencimento: fim + 12 meses
+      if (val) {
+        const d = new Date(val + 'T00:00:00')
+        d.setFullYear(d.getFullYear() + 1)
+        next.data_vencimento = d.toISOString().split('T')[0]
+      }
+      return next
+    })
+  }
+
+  if (loading) {
     return (
       <Card>
         <div className="space-y-4">
@@ -1049,189 +1085,119 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
 
   return (
     <div className="space-y-6">
-      {/* Mini Dashboard */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <SaldoFerias saldos={saldos} onUpdateDireito={handleUpdateDireito} />
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs font-medium text-cinza-estrutural mb-1">Proximas Ferias</p>
-          {proximaFerias ? (
-            <>
-              <p className="text-lg font-bold text-cinza-preto">
-                {safeFormat(proximaFerias.data_inicio)}
-              </p>
-              <p className="text-xs text-cinza-estrutural mt-1">
-                ate {safeFormat(proximaFerias.data_fim)} ({proximaFerias.dias} dias)
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-lg font-bold text-cinza-preto">-</p>
-              <p className="text-xs text-cinza-estrutural mt-1">Nenhuma programada</p>
-            </>
-          )}
-        </div>
-        <FeriasAlert alertCount={alertCount} vencidaCount={vencidaCount} />
-      </div>
-
-      {/* Cards de resumo */}
+      {/* Secao 1 — Cards de Saldo Resumido */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-          <div className="flex items-center gap-2 text-sm text-blue-600 mb-1">
-            <Calendar size={14} />
-            Dias de Direito
-          </div>
-          <div className="text-2xl font-bold text-blue-700">{resumo.diasDireito}</div>
-        </div>
-        <div className="bg-green-50 rounded-lg p-4 border border-green-100">
-          <div className="flex items-center gap-2 text-sm text-green-600 mb-1">
-            <TrendingDown size={14} />
-            Dias Gozados
-          </div>
-          <div className="text-2xl font-bold text-green-700">{resumo.diasGozados}</div>
-        </div>
         <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
           <div className="flex items-center gap-2 text-sm text-emerald-600 mb-1">
             <TrendingUp size={14} />
-            Dias Disponiveis
+            Total Disponivel
           </div>
-          <div className="text-2xl font-bold text-emerald-700">{resumo.diasDisponiveis}</div>
+          <div className="text-2xl font-bold text-emerald-700">{totalDisponivel} dias</div>
         </div>
-        <div className="bg-red-50 rounded-lg p-4 border border-red-100">
-          <div className="flex items-center gap-2 text-sm text-red-600 mb-1">
-            <Ban size={14} />
-            Periodos Vencidos
+        <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+          <div className="flex items-center gap-2 text-sm text-blue-600 mb-1">
+            <Calendar size={14} />
+            Periodos Ativos
           </div>
-          <div className="text-2xl font-bold text-red-700">{resumo.periodosVencidos}</div>
+          <div className="text-2xl font-bold text-blue-700">{periodosAtivos}</div>
         </div>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex gap-2">
-        <Button type="button" onClick={() => setShowFeriasForm(true)}>
-          <Plus size={16} /> Adicionar Ferias
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => setShowVenderForm(true)}>
-          <DollarSign size={16} /> Vender Ferias
-        </Button>
-      </div>
-
-      {/* Extrato de Movimentacoes */}
-      <Card>
-        <h3 className="text-lg font-bold text-cinza-preto mb-4 flex items-center gap-2">
-          <FileText size={18} className="text-azul-medio" />
-          Extrato de Movimentacoes
-        </h3>
-        {extrato.length === 0 ? (
-          <EmptyState
-            icon={<FileText size={40} />}
-            title="Nenhuma movimentacao"
-            description="Nenhum registro de ferias encontrado"
-          />
+        <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+          <div className="flex items-center gap-2 text-sm text-amber-700 mb-1">
+            <Clock size={14} />
+            Proximo Vencimento
+          </div>
+          <div className="text-lg font-bold text-amber-800">
+            {proximoVencimento ? formatarData(proximoVencimento.data_vencimento) : '-'}
+          </div>
+        </div>
+        {diasVencidos > 0 ? (
+          <div className="bg-red-50 rounded-lg p-4 border border-red-200">
+            <div className="flex items-center gap-2 text-sm text-red-600 mb-1">
+              <Ban size={14} />
+              Dias Vencidos
+            </div>
+            <div className="text-2xl font-bold text-red-700">{diasVencidos}</div>
+          </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableHead>Data</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Descricao</TableHead>
-              <TableHead>Dias</TableHead>
-              <TableHead>Status</TableHead>
-            </TableHeader>
-            <TableBody>
-              {extrato.map((e, idx) => (
-                <TableRow
-                  key={`${e.referencia_id}-${idx}`}
-                  className="cursor-pointer hover:bg-gray-50"
-                  onClick={() => setEditingExtrato(e)}
-                >
-                  <TableCell>
-                    {safeFormat(e.data_movimento)}
-                  </TableCell>
-                  <TableCell>
-                    {e.tipo_movimento === 'CRÉDITO' ? (
-                      <Badge variant="success">CREDITO</Badge>
-                    ) : (
-                      <Badge variant="danger">DEBITO</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>{e.descricao}</TableCell>
-                  <TableCell>
-                    <span className={e.dias > 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                      {e.dias > 0 ? `+${e.dias}` : e.dias}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    {e.tipo_movimento === 'CRÉDITO' && e.saldo_status
-                      ? getSaldoStatusBadge(e.saldo_status)
-                      : '-'}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="bg-green-50 rounded-lg p-4 border border-green-100">
+            <div className="flex items-center gap-2 text-sm text-green-600 mb-1">
+              <Ban size={14} />
+              Dias Vencidos
+            </div>
+            <div className="text-2xl font-bold text-green-700">0</div>
+          </div>
         )}
-      </Card>
+      </div>
 
-      {/* Periodos Aquisitivos - Cards por periodo (TAREFA 4c/4d) */}
+      {/* Secao 2 — Periodos Aquisitivos */}
       <Card>
-        <h3 className="text-lg font-bold text-cinza-preto mb-4 flex items-center gap-2">
-          <Clock size={18} className="text-azul-medio" />
-          Periodos Aquisitivos
-        </h3>
-        {saldos.length === 0 ? (
-          <EmptyState
-            icon={<Clock size={40} />}
-            title="Nenhum periodo"
-            description="Nenhum periodo aquisitivo encontrado"
-          />
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-cinza-preto flex items-center gap-2">
+            <Clock size={18} className="text-azul-medio" />
+            Periodos Aquisitivos
+          </h3>
+          <Button type="button" variant="secondary" size="sm" onClick={() => { setFormPeriodo({ aquisitivo_inicio: '', aquisitivo_fim: '', data_vencimento: '', dias_direito: 30 }); setModalAberto('criar-periodo') }}>
+            <Plus size={14} /> Adicionar Periodo
+          </Button>
+        </div>
+        {periodos.length === 0 ? (
+          <EmptyState icon={<Clock size={40} />} title="Nenhum periodo" description="Nenhum periodo aquisitivo encontrado" />
         ) : (
           <div className="space-y-3">
-            {saldos.map((s) => {
-              const usados = s.debitos || 0
-              const percentual = s.dias_direito > 0 ? Math.min(100, (usados / s.dias_direito) * 100) : 0
-              const statusColor =
-                s.status_calculado === 'Vencido' ? 'border-red-300 bg-red-50' :
-                s.status_calculado === 'Gozado' ? 'border-gray-300 bg-gray-50' :
-                s.status_calculado === 'Parcial' ? 'border-amber-300 bg-amber-50' :
-                'border-green-300 bg-green-50'
+            {periodos.map((p) => {
+              const cfg = getStatusPeriodoConfig(p.status_calculado)
+              const usados = p.debitos || 0
+              const percentual = p.dias_direito > 0 ? Math.min(100, (usados / p.dias_direito) * 100) : 0
               return (
-                <div key={s.id} className={`border rounded-lg p-4 ${statusColor}`}>
+                <div key={p.id} className={`border rounded-lg p-4 ${cfg.bgColor}`}>
                   <div className="flex items-center justify-between mb-2">
                     <div className="font-medium text-cinza-preto">
-                      {formatDateSafe(s.aquisitivo_inicio)} a {formatDateSafe(s.aquisitivo_fim)}
+                      {formatarPeriodoAquisitivo(p.aquisitivo_inicio, p.aquisitivo_fim)}
                     </div>
-                    {getSaldoStatusBadge(s.status_calculado)}
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cfg.textColor} ${cfg.bgColor}`}>
+                        {cfg.label}
+                      </span>
+                      <button type="button" onClick={() => handleVerExtrato(p)} className="text-azul-medio hover:text-azul text-xs underline">
+                        Ver extrato
+                      </button>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-3">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm mb-3">
+                    <div>
+                      <span className="text-gray-500">Vencimento:</span>{' '}
+                      <span className="font-medium">{formatarData(p.data_vencimento)}</span>
+                    </div>
                     <div>
                       <span className="text-gray-500">Direito:</span>{' '}
-                      <span className="font-medium">{s.dias_direito} dias</span>
+                      <span className="font-medium">{p.dias_direito} dias</span>
                     </div>
                     <div>
-                      <span className="text-gray-500">Debitos:</span>{' '}
-                      <span className="font-medium">{s.debitos} dias</span>
+                      <span className="text-gray-500">Gozado:</span>{' '}
+                      <span className="font-medium">{p.debitos} dias</span>
                     </div>
                     <div>
                       <span className="text-gray-500">Saldo:</span>{' '}
-                      <span className="font-medium text-emerald-600">{s.dias_restantes} dias</span>
+                      <span className="font-medium text-emerald-600">{p.dias_restantes} dias</span>
                     </div>
                     <div>
-                      <span className="text-gray-500">Vencimento:</span>{' '}
-                      <span className="font-medium">{formatDateSafe(s.data_vencimento)}</span>
+                      <span className="text-gray-500">Extras:</span>{' '}
+                      <span className="font-medium">{p.creditos_extras || 0} dias</span>
                     </div>
                   </div>
                   <div className="w-full bg-gray-100 rounded-full h-2">
                     <div
                       className={`h-2 rounded-full transition-all ${
-                        s.status_calculado === 'Vencido' ? 'bg-red-500' :
-                        s.status_calculado === 'Gozado' ? 'bg-gray-400' :
-                        s.status_calculado === 'Parcial' ? 'bg-amber-500' :
+                        p.status_calculado === 'Vencido' ? 'bg-red-500' :
+                        p.status_calculado === 'Gozado' ? 'bg-gray-400' :
+                        p.status_calculado === 'Parcial' ? 'bg-amber-500' :
                         'bg-green-500'
                       }`}
                       style={{ width: `${percentual}%` }}
                     />
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
-                    {usados} de {s.dias_direito} dias utilizados ({Math.round(percentual)}%)
+                    {usados} de {p.dias_direito} dias utilizados ({Math.round(percentual)}%)
                   </div>
                 </div>
               )
@@ -1240,61 +1206,72 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
         )}
       </Card>
 
-      {/* Historico */}
+      {/* Secao 3 — Historico de Ferias */}
       <Card>
-        <h3 className="text-lg font-bold text-cinza-preto mb-4 flex items-center gap-2">
-          <Calendar size={18} className="text-azul-medio" />
-          Historico de Ferias
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-cinza-preto flex items-center gap-2">
+            <Calendar size={18} className="text-azul-medio" />
+            Historico de Ferias
+          </h3>
+          <Button type="button" size="sm" onClick={() => { setFormFerias({ data_inicio: '', data_fim: '', dias: 0, tipo: 'Individual', abono_pecuniario: false, dias_vendidos: 0, observacao: '' }); setAlocacoesPreview(null); setErroAlocacao(null); setModalAberto('criar-ferias') }}>
+            <Plus size={14} /> Registrar Ferias
+          </Button>
+        </div>
         {ferias.length === 0 ? (
-          <EmptyState
-            icon={<Calendar size={40} />}
-            title="Nenhum registro"
-            description="Nenhuma ferias registrada para este funcionario"
-          />
+          <EmptyState icon={<Calendar size={40} />} title="Nenhum registro" description="Nenhuma ferias registrada" />
         ) : (
           <Table>
             <TableHeader>
-              <TableHead>Periodo Aquisitivo</TableHead>
-              <TableHead>Data Inicio</TableHead>
-              <TableHead>Data Fim</TableHead>
-              <TableHead>Dias</TableHead>
+              <TableHead>Periodo</TableHead>
               <TableHead>Tipo</TableHead>
+              <TableHead>Dias</TableHead>
+              <TableHead>Abono</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Observacao</TableHead>
-              <TableHead className="w-10"></TableHead>
+              <TableHead>Acoes</TableHead>
             </TableHeader>
             <TableBody>
               {ferias.map((f) => {
-                const saldo = saldos.find((s) => s.id === (f as Ferias & { periodo_aquisitivo_id?: string }).periodo_aquisitivo_id)
+                const statusCfg = getStatusFeriasConfig(f.status || '')
                 return (
                   <TableRow key={f.id}>
                     <TableCell>
-                      {saldo
-                        ? `${safeFormat(saldo.aquisitivo_inicio, 'dd/MM/yy')} - ${safeFormat(saldo.aquisitivo_fim, 'dd/MM/yy')}`
-                        : '-'}
+                      {formatarData(f.data_inicio)} — {formatarData(f.data_fim)}
                     </TableCell>
-                    <TableCell>{safeFormat(f.data_inicio)}</TableCell>
-                    <TableCell>{safeFormat(f.data_fim)}</TableCell>
+                    <TableCell>
+                      <Badge variant={f.tipo === 'Coletiva' ? 'info' : 'neutral'}>{f.tipo}</Badge>
+                    </TableCell>
                     <TableCell>{f.dias}</TableCell>
-                    <TableCell>{f.tipo}</TableCell>
                     <TableCell>
-                      <Badge variant={
-                        f.status === 'Programada' ? 'info'
-                        : f.status === 'Em Andamento' ? 'warning'
-                        : f.status === 'Concluida' || f.status === 'Concluída' ? 'success'
-                        : 'neutral'
-                      }>{f.status}</Badge>
+                      {f.abono_pecuniario ? (
+                        <span className="text-amber-700 font-medium">Sim ({f.dias_vendidos || 0} dias)</span>
+                      ) : '-'}
                     </TableCell>
-                    <TableCell className="max-w-[150px] truncate">{f.observacao || '-'}</TableCell>
                     <TableCell>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFerias(f.id)}
-                        className="text-red-500 hover:bg-red-50 p-1 rounded"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusCfg.textColor} ${statusCfg.bgColor} ${statusCfg.borderColor}`}>
+                        {statusCfg.label}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {f.status === 'Programada' && (
+                          <>
+                            <button type="button" onClick={() => handleAtualizarStatus(f.id, 'Aprovada')} className="text-xs px-2 py-1 rounded bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200">Aprovar</button>
+                            <button type="button" onClick={() => handleExcluirFerias(f.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={14} /></button>
+                          </>
+                        )}
+                        {f.status === 'Aprovada' && (
+                          <>
+                            <button type="button" onClick={() => handleAtualizarStatus(f.id, 'Em Andamento')} className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200">Iniciar</button>
+                            <button type="button" onClick={() => handleAtualizarStatus(f.id, 'Cancelada')} className="text-xs px-2 py-1 rounded bg-red-50 text-red-700 hover:bg-red-100 border border-red-200">Cancelar</button>
+                          </>
+                        )}
+                        {f.status === 'Em Andamento' && (
+                          <button type="button" onClick={() => handleAtualizarStatus(f.id, 'Concluída')} className="text-xs px-2 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100 border border-green-200">Concluir</button>
+                        )}
+                        {(f.status === 'Concluída' || f.status === 'Cancelada') && (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 )
@@ -1304,84 +1281,179 @@ function FeriasTab({ funcionarioId, funcionarioNome }: { funcionarioId: string; 
         )}
       </Card>
 
-      <FeriasForm
-        open={showFeriasForm}
-        onClose={() => setShowFeriasForm(false)}
-        onSubmit={handleCreateFerias}
-        funcionarioId={funcionarioId}
-        funcionarioNome={funcionarioNome}
-      />
-      <VenderFeriasForm
-        open={showVenderForm}
-        onClose={() => setShowVenderForm(false)}
-        saldos={saldos}
-        onSubmit={handleVender}
-      />
+      {/* Modal: Criar Ferias */}
+      <Modal open={modalAberto === 'criar-ferias'} onClose={() => setModalAberto(null)} title="Registrar Ferias" size="lg">
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Data Inicio *" type="date" value={formFerias.data_inicio} onChange={(e) => handleFormFeriasChange({ data_inicio: e.target.value })} />
+            <Input label="Data Fim *" type="date" value={formFerias.data_fim} onChange={(e) => handleFormFeriasChange({ data_fim: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Dias (calculado)" type="number" value={formFerias.dias.toString()} disabled onChange={() => {}} />
+            <Select
+              label="Tipo"
+              value={formFerias.tipo}
+              onChange={(e) => handleFormFeriasChange({ tipo: e.target.value as FeriasTipo })}
+              options={[{ value: 'Individual', label: 'Individual' }, { value: 'Coletiva', label: 'Coletiva' }]}
+            />
+          </div>
 
-      {/* Edit Extrato Modal */}
-      {editingExtrato && (
-        <EditExtratoModal
-          item={editingExtrato}
-          onClose={() => setEditingExtrato(null)}
-          onSave={handleSaveExtrato}
-        />
-      )}
+          {/* Abono Pecuniario */}
+          <div className="border rounded-lg p-3 space-y-2">
+            <label className="flex items-center gap-2 text-sm text-cinza-preto">
+              <input
+                type="checkbox"
+                checked={formFerias.abono_pecuniario}
+                onChange={(e) => handleFormFeriasChange({ abono_pecuniario: e.target.checked })}
+                className="rounded border-gray-300 text-laranja focus:ring-laranja"
+              />
+              Deseja vender dias (abono pecuniario)?
+            </label>
+            {formFerias.abono_pecuniario && formFerias.dias > 0 && (
+              <Input
+                label={`Dias a vender (max ${Math.floor(formFerias.dias / 3)})`}
+                type="number"
+                value={formFerias.dias_vendidos.toString()}
+                onChange={(e) => {
+                  const max = Math.floor(formFerias.dias / 3)
+                  const val = Math.min(max, Math.max(0, parseInt(e.target.value) || 0))
+                  handleFormFeriasChange({ dias_vendidos: val })
+                }}
+              />
+            )}
+          </div>
+
+          {/* Observacao */}
+          <div>
+            <label className="block text-sm font-medium text-cinza-preto mb-1">Observacao</label>
+            <textarea
+              value={formFerias.observacao}
+              onChange={(e) => setFormFerias({ ...formFerias, observacao: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-cinza-preto focus:outline-none focus:ring-2 focus:ring-laranja focus:border-transparent"
+              rows={2}
+            />
+          </div>
+
+          {/* Preview Alocacao */}
+          {alocacoesPreview && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+              <p className="font-medium text-blue-800 mb-2">Estes dias serao descontados de:</p>
+              {alocacoesPreview.alocacoesGozo.map((a, i) => {
+                const per = alocacoesPreview.periodos.find((p) => p.id === a.ferias_periodo_id)
+                return (
+                  <p key={`gozo-${i}`} className="text-blue-700">
+                    {a.dias} dias de gozo — {per ? formatarPeriodoAquisitivo(per.aquisitivo_inicio, per.aquisitivo_fim) : '?'} (vence em {per ? formatarData(per.data_vencimento) : '?'})
+                  </p>
+                )
+              })}
+              {alocacoesPreview.alocacoesVenda.map((a, i) => {
+                const per = alocacoesPreview.periodos.find((p) => p.id === a.ferias_periodo_id)
+                return (
+                  <p key={`venda-${i}`} className="text-amber-700">
+                    {a.dias} dias de venda — {per ? formatarPeriodoAquisitivo(per.aquisitivo_inicio, per.aquisitivo_fim) : '?'} (vence em {per ? formatarData(per.data_vencimento) : '?'})
+                  </p>
+                )
+              })}
+              <p className="text-blue-600 mt-1">Saldo total disponivel: {alocacoesPreview.saldoTotalDisponivel} dias</p>
+            </div>
+          )}
+
+          {erroAlocacao && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+              {erroAlocacao}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setModalAberto(null)}>Cancelar</Button>
+            <Button
+              type="button"
+              onClick={handleSalvarFerias}
+              disabled={salvando || !formFerias.data_inicio || !formFerias.data_fim || formFerias.dias <= 0 || !!erroAlocacao}
+            >
+              {salvando ? 'Salvando...' : 'Salvar como Programada'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Criar Periodo */}
+      <Modal open={modalAberto === 'criar-periodo'} onClose={() => setModalAberto(null)} title="Adicionar Periodo Aquisitivo">
+        <div className="space-y-4">
+          <Input label="Inicio do Periodo Aquisitivo *" type="date" value={formPeriodo.aquisitivo_inicio} onChange={(e) => setFormPeriodo({ ...formPeriodo, aquisitivo_inicio: e.target.value })} />
+          <Input label="Fim do Periodo Aquisitivo *" type="date" value={formPeriodo.aquisitivo_fim} onChange={(e) => handleAquisitivoFimChange(e.target.value)} />
+          <Input label="Data de Vencimento *" type="date" value={formPeriodo.data_vencimento} onChange={(e) => setFormPeriodo({ ...formPeriodo, data_vencimento: e.target.value })} />
+          <Input label="Dias de Direito" type="number" value={formPeriodo.dias_direito.toString()} onChange={(e) => setFormPeriodo({ ...formPeriodo, dias_direito: parseInt(e.target.value) || 30 })} />
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setModalAberto(null)}>Cancelar</Button>
+            <Button
+              type="button"
+              onClick={handleCriarPeriodo}
+              disabled={salvando || !formPeriodo.aquisitivo_inicio || !formPeriodo.aquisitivo_fim || !formPeriodo.data_vencimento}
+            >
+              {salvando ? 'Salvando...' : 'Criar Periodo'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Extrato do Periodo */}
+      <Modal open={modalAberto === 'extrato'} onClose={() => setModalAberto(null)} title="Extrato do Periodo" size="lg">
+        {periodoSelecionado && (
+          <div className="space-y-4">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-cinza-preto">
+                    {formatarPeriodoAquisitivo(periodoSelecionado.aquisitivo_inicio, periodoSelecionado.aquisitivo_fim)}
+                  </p>
+                  <p className="text-sm text-gray-500">Vence em {formatarData(periodoSelecionado.data_vencimento)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-emerald-600">{periodoSelecionado.dias_restantes} dias</p>
+                  <p className="text-xs text-gray-500">disponiveis</p>
+                </div>
+              </div>
+            </div>
+
+            {movimentacoes.length === 0 ? (
+              <EmptyState icon={<FileText size={32} />} title="Nenhuma movimentacao" description="Este periodo nao possui movimentacoes" />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Natureza</TableHead>
+                  <TableHead>Dias</TableHead>
+                  <TableHead>Observacao</TableHead>
+                </TableHeader>
+                <TableBody>
+                  {movimentacoes.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell>{formatarData(m.data)}</TableCell>
+                      <TableCell>{m.tipo}</TableCell>
+                      <TableCell>
+                        {m.natureza === 'Crédito' ? (
+                          <span className="text-green-600 font-medium">Credito</span>
+                        ) : (
+                          <span className="text-red-600 font-medium">Debito</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className={m.natureza === 'Crédito' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                          {m.natureza === 'Crédito' ? '+' : '-'}{m.dias}
+                        </span>
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate">{m.observacao || '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
-  )
-}
-
-// =================== EDIT EXTRATO MODAL ===================
-function EditExtratoModal({
-  item,
-  onClose,
-  onSave,
-}: {
-  item: FeriasExtrato
-  onClose: () => void
-  onSave: (item: FeriasExtrato, data: { data?: string; dias?: number }) => Promise<void>
-}) {
-  const [data, setData] = useState(item.data_movimento || '')
-  const [dias, setDias] = useState(Math.abs(item.dias))
-  const [saving, setSaving] = useState(false)
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      await onSave(item, { data, dias })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Modal open={true} onClose={onClose} title="Editar Movimentacao">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="bg-gray-50 rounded-lg p-3 text-sm">
-          <p><strong>Tipo:</strong> {item.tipo_movimento}</p>
-          <p><strong>Descricao:</strong> {item.descricao}</p>
-          <p><strong>Tabela:</strong> {item.referencia_tabela}</p>
-        </div>
-        <Input
-          label="Data"
-          type="date"
-          value={data}
-          onChange={(e) => setData(e.target.value)}
-        />
-        <Input
-          label="Dias"
-          type="number"
-          value={dias.toString()}
-          onChange={(e) => setDias(parseInt(e.target.value) || 0)}
-        />
-        <div className="flex justify-end gap-3 pt-2">
-          <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={saving}>
-            {saving ? 'Salvando...' : 'Salvar'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
   )
 }
 
